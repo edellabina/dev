@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Map of Viprinet Stations</title>
+    <meta property="og:description" content="Use MapLibre GL JS' built-in functions to visualize points as clusters." />
+    <meta charset='utf-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel='stylesheet' href='https://unpkg.com/maplibre-gl/dist/maplibre-gl.css' />
+    <script src='https://unpkg.com/maplibre-gl/dist/maplibre-gl.js'></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        html, body, #map { height: 100%; }
+
+        .marker {
+            background-color: #FF6347;  // Colore del marker
+            width: 20px;  // Larghezza del marker
+            height: 20px;  // Altezza del marker
+            border-radius: 50%;  // Forma rotonda
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;  // Cursor a forma di puntatore per indicare che è cliccabile
+            box-shadow: 0 0 6px rgba(0,0,0,0.5);  // Ombra per distacco visivo
+        }        }        
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        
+        /*
+        Style basemap
+        https://medium.com/@go2garret/free-basemap-tiles-for-maplibre-18374fab60cb
+        */
+
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/arcgis_hybrid.json', // Style URL
+            center: [10.4916, 43.9131], // Longitude, Latitude
+            zoom: 5,
+            pitch: 45,
+            bearing: 0,
+            antialias: true            
+        });
+
+        /*
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: {
+                'id': 'raster',
+                'version': 8,
+                'name': 'Raster tiles',
+                'center': [0, 0],
+                'zoom': 0,
+                'sources': {
+                    'raster-tiles': {
+                        'type': 'raster',
+                        'tiles': ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                        'tileSize': 256,
+                        'minzoom': 0,
+                        'maxzoom': 19
+                    }
+                },
+                'layers': [
+                    {
+                        'id': 'background',
+                        'type': 'background',
+                        'paint': {
+                            'background-color': '#e0dfdf'
+                        }
+                    },
+                    {
+                        'id': 'simple-tiles',
+                        'type': 'raster',
+                        'source': 'raster-tiles'
+                    }
+                ]
+            },
+            center: [10.4916, 43.9131],
+            zoom: 5,
+            pitch: 45,
+            bearing: 0,
+            antialias: true
+        });
+        */
+
+        fetch('https://webservices.ingv.it/fdsnws/station/1/query?station=CUC,VLC,LNSS,MSAG,MRVN,LPEL,GIUL,VIVA,CAMP,ARVD,CESI,PARC,TRIV,MIDA,GALF,RAFF,LATE,TEOL,LPDG,MTTG,ALJA,SOI,PTMD,MILZ,FAVR,CRJA,LINA,GIB,PETRA,MCT,APRC,MELA,MOCO,SGG,MGR,CAR1,GATE,PIPA,MRLC,USI,CAFE,MRB1,MTMR,PAOL,PSB1,PTRJ,VITU,VULT,STAL,SGO,MTGR,MPG,MNO,GMB,ATN,MEU,LATB&level=station&format=text&includerestricted=True&nodata=204')
+            .then(response => response.text())
+            .then(data => {
+                const stations = parseStations(data);
+                addMarkers(stations);
+                fitMapToMarkers(stations);
+            })
+            .catch(error => {
+                console.error('Error fetching seismic stations:', error);
+            });
+
+        function parseStations(data) {
+            const lines = data.split('\n').slice(1); // Ignore the first line (header)
+            return lines.filter(line => line).map(line => {
+                const [network, station, lat, lon, elevation, siteName, startTime, endTime] = line.split('|').map(str => str.trim());
+                return { lat: parseFloat(lat), lon: parseFloat(lon), name: network+"."+station };
+            });
+        }
+
+        function NEWaddMarkers(stations) {
+            stations.forEach(station => {
+                // Crea un elemento div per il marker
+                const el = document.createElement('div');
+                el.className = 'marker';  // Assegna una classe per lo styling
+                // Applica lo stile CSS direttamente o tramite una classe
+                el.style.backgroundColor = '#FF6347';  // Colore del marker
+                el.style.width = '20px';  // Larghezza del marker
+                el.style.height = '20px';  // Altezza del marker
+                el.style.borderRadius = '50%';  // Forma rotonda
+                el.style.display = 'flex';
+                el.style.alignItems = 'center';
+                el.style.justifyContent = 'center';
+        
+                // Crea il marker personalizzato
+                new maplibregl.Marker(el)
+                    .setLngLat([station.lon, station.lat])
+                    .setPopup(new maplibregl.Popup({ offset: 25 }).setText(station.name))
+                    .addTo(map);
+            });
+        }
+
+        function addMarkers(stations) {
+            stations.forEach(station => {
+                
+                new maplibregl.Marker()
+                    .setLngLat([station.lon, station.lat])
+                    .setPopup(new maplibregl.Popup({ offset: 25 }).setText(station.name))
+                    .addTo(map);
+            });
+        }
+
+        function fitMapToMarkers(stations) {
+            const lats = stations.map(station => station.lat);
+            const lons = stations.map(station => station.lon);
+            const bounds = new maplibregl.LngLatBounds(
+                new maplibregl.LngLat(Math.min(...lons), Math.min(...lats)),
+                new maplibregl.LngLat(Math.max(...lons), Math.max(...lats))
+            );
+            map.fitBounds(bounds, {
+                padding: { top: 50, bottom:50, left: 50, right: 50 }
+            });
+
+            
+        }
+
+        
+    </script>
+</body>
+</html>
