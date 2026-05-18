@@ -84,7 +84,7 @@
         });
         */
 
-        fetch('https://webservices.ingv.it/fdsnws/station/1/query?station=CUC,VLC,LNSS,MSAG,MRVN,LPEL,GIUL,VIVA,CAMP,ARVD,CESI,PARC,TRIV,MIDA,GALF,RAFF,LATE,TEOL,LPDG,MTTG,ALJA,SOI,PTMD,MILZ,FAVR,CRJA,LINA,GIB,PETRA,MCT,APRC,MELA,MOCO,SGG,MGR,CAR1,GATE,PIPA,MRLC,USI,CAFE,MRB1,MTMR,PAOL,PSB1,PTRJ,VITU,VULT,STAL,SGO,MTGR,MPG,MNO,GMB,ATN,MEU,LATB&level=station&format=text&includerestricted=True&nodata=204')
+        fetch('https://webservices.ingv.it/fdsnws/station/1/query?&level=station&format=text&includerestricted=True&nodata=204')
             .then(response => response.text())
             .then(data => {
                 const stations = parseStations(data);
