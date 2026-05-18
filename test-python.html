@@ -1,119 +1,36 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="UTF-8">
-  <title>IV.LAV9 waveform reale</title>
+from pyscript import display
+import altair as alt
+from vega_datasets import data
 
-  <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
-  <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+source = data.movies.url
 
-  <style>
-    body { font-family: Arial, sans-serif; margin: 30px; }
-    button { padding: 10px 18px; font-size: 16px; }
-    #status { margin-top: 15px; white-space: pre-wrap; }
-    #plot { margin-top: 20px; }
-  </style>
-</head>
+pts = alt.selection_point(encodings=['x'])
 
-<body>
-
-<h1>Waveform reale IV.LAV9</h1>
-
-<p>
-  Scarica 60 secondi di segnale miniSEED da INGV e lo disegna con ObsPy.
-</p>
-
-<button py-click="load_lav9()">Carica IV.LAV9</button>
-
-<div id="status">Pronto.</div>
-<div id="plot"></div>
-
-<py-config>
-packages = [
-  "numpy",
-  "matplotlib",
-  "obspy"
-]
-</py-config>
-
-<py-script>
-from pyscript import document
-from pyodide.http import pyfetch
-from io import BytesIO
-
-import numpy as np
-import matplotlib
-matplotlib.use("module://matplotlib_pyodide.html5_canvas_backend")
-import matplotlib.pyplot as plt
-
-from obspy import read
-
-async def load_lav9():
-    status = document.getElementById("status")
-    plot_div = document.getElementById("plot")
-
-    status.innerText = "Scarico il dato reale da INGV..."
-    plot_div.innerHTML = ""
-
-    # 60 secondi di waveform reale
-    url = (
-        "https://webservices.ingv.it/fdsnws/dataselect/1/query"
-        "?net=IV"
-        "&sta=LAV9"
-        "&loc=00"
-        "&cha=HHZ"
-        "&starttime=2024-01-01T00:00:00"
-        "&endtime=2024-01-01T00:01:00"
+rect = alt.Chart(data.movies.url).mark_rect().encode(
+    alt.X('IMDB_Rating:Q', bin=True),
+    alt.Y('Rotten_Tomatoes_Rating:Q', bin=True),
+    alt.Color('count()',
+        scale=alt.Scale(scheme='greenblue'),
+        legend=alt.Legend(title='Total Records')
     )
+)
 
-    try:
-        response = await pyfetch(url)
+circ = rect.mark_point().encode(
+    alt.ColorValue('grey'),
+    alt.Size('count()',
+        legend=alt.Legend(title='Records in Selection')
+    )
+).transform_filter(
+    pts
+)
 
-        if response.status != 200:
-            status.innerText = f"Errore INGV: HTTP {response.status}"
-            return
+bar = alt.Chart(source).mark_bar().encode(
+    x='Major_Genre:N',
+    y='count()',
+    color=alt.condition(pts, alt.ColorValue("steelblue"), alt.ColorValue("grey"))
+).properties(
+    width=550,
+    height=200
+).add_params(pts)
 
-        data = await response.bytes()
-
-        # ObsPy legge il miniSEED da memoria
-        st = read(BytesIO(data), format="MSEED")
-
-        tr = st[0]
-        tr.detrend("demean")
-
-        fs = tr.stats.sampling_rate
-        t = np.arange(tr.stats.npts) / fs
-
-        document.pyodideMplTarget = plot_div
-
-        plt.figure(figsize=(11, 4))
-        plt.plot(t, tr.data)
-        plt.title(f"{tr.id} - {tr.stats.starttime}")
-        plt.xlabel("Tempo [s]")
-        plt.ylabel("Ampiezza")
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-
-        status.innerText = (
-            "Dato caricato correttamente.\n"
-            f"Trace: {tr.id}\n"
-            f"Start: {tr.stats.starttime}\n"
-            f"End: {tr.stats.endtime}\n"
-            f"Sampling rate: {tr.stats.sampling_rate} Hz\n"
-            f"Campioni: {tr.stats.npts}"
-        )
-
-    except Exception as e:
-        status.innerText = (
-            "Errore durante il caricamento.\n\n"
-            + str(e)
-            + "\n\nPossibile causa: CORS, servizio INGV non disponibile, "
-              "oppure ObsPy non compatibile nel browser."
-        )
-</py-script>
-
-</body>
-</html>
-
-
+display(alt.vconcat(rect + circ, bar).resolve_legend(color="independent", size="independent"), target="altair")
