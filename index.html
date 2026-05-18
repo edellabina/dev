@@ -84,7 +84,7 @@
         });
         */
 
-        fetch('https://webservices.ingv.it/fdsnws/station/1/query?&level=station&format=text&includerestricted=True&nodata=204')
+        fetch('https://webservices.ingv.it/fdsnws/station/1/query?network=IV&level=station&format=text&includerestricted=True&nodata=204')
             .then(response => response.text())
             .then(data => {
                 const stations = parseStations(data);
