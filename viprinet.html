@@ -5,68 +5,55 @@
     <meta property="og:description" content="MapLibre GL JS seismic stations map" />
     <meta charset='utf-8'>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel='stylesheet' href='https://unpkg.com/maplibre-gl/dist/maplibre-gl.css' />
-    <script src='https://unpkg.com/maplibre-gl/dist/maplibre-gl.js'></script>
+    <link rel='stylesheet' href='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css' />
+    <script src='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js'></script>
     <style>
         body { margin: 0; padding: 0; }
         html, body, #map { height: 100%; width: 100%; }
 
         .marker {
             background-color: #FF6347;
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            border: 2px solid #ffffff;
             cursor: pointer;
-            box-shadow: 0 0 6px rgba(0,0,0,0.5);
+            box-shadow: 0 0 5px rgba(0,0,0,0.4);
         }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <script>
+        // Basemap vettoriale stabile senza chiavi API
         const map = new maplibregl.Map({
             container: 'map',
-            style: {
-                'version': 8,
-                'sources': {
-                    'raster-tiles': {
-                        'type': 'raster',
-                        'tiles': ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-                        'tileSize': 256,
-                        'minzoom': 0,
-                        'maxzoom': 19
-                    }
-                },
-                'layers': [
-                    {
-                        'id': 'simple-tiles',
-                        'type': 'raster',
-                        'source': 'raster-tiles'
-                    }
-                ]
-            },
+            style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
             center: [10.4916, 43.9131],
-            zoom: 5,
-            pitch: 0,
-            bearing: 0,
-            antialias: true
+            zoom: 5
         });
 
-        fetch('https://webservices.ingv.it/fdsnws/station/1/query?station=CUC,VLC,LNSS,MSAG,MRVN,LPEL,GIUL,VIVA,CAMP,ARVD,CESI,PARC,TRIV,MIDA,GALF,RAFF,LATE,TEOL,LPDG,MTTG,ALJA,SOI,PTMD,MILZ,FAVR,CRJA,LINA,GIB,PETRA,MCT,APRC,MELA,MOCO,SGG,MGR,CAR1,GATE,PIPA,MRLC,USI,CAFE,MRB1,MTMR,PAOL,PSB1,PTRJ,VITU,VULT,STAL,SGO,MTGR,MPG,MNO,GMB,ATN,MEU,LATB&level=station&format=text&includerestricted=True&nodata=204')
-            .then(response => response.text())
-            .then(data => {
-                const stations = parseStations(data);
-                if (stations.length > 0) {
-                    addMarkers(stations);
-                    fitMapToMarkers(stations);
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching seismic stations:', error);
-            });
+        // URL dell'API INGV incapsulato con un CORS Proxy per aggirare il blocco browser
+        const ingvUrl = 'https://webservices.ingv.it/fdsnws/station/1/query?station=CUC,VLC,LNSS,MSAG,MRVN,LPEL,GIUL,VIVA,CAMP,ARVD,CESI,PARC,TRIV,MIDA,GALF,RAFF,LATE,TEOL,LPDG,MTTG,ALJA,SOI,PTMD,MILZ,FAVR,CRJA,LINA,GIB,PETRA,MCT,APRC,MELA,MOCO,SGG,MGR,CAR1,GATE,PIPA,MRLC,USI,CAFE,MRB1,MTMR,PAOL,PSB1,PTRJ,VITU,VULT,STAL,SGO,MTGR,MPG,MNO,GMB,ATN,MEU,LATB&level=station&format=text&includerestricted=True&nodata=204';
+        const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(ingvUrl);
+
+        map.on('load', () => {
+            fetch(proxyUrl)
+                .then(response => {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.text();
+                })
+                .then(data => {
+                    const stations = parseStations(data);
+                    if (stations.length > 0) {
+                        addMarkers(stations);
+                        fitMapToMarkers(stations);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching seismic stations:', error);
+                });
+        });
 
         function parseStations(data) {
             const lines = data.split('\n');
@@ -74,6 +61,7 @@
 
             lines.forEach(line => {
                 const trimmedLine = line.trim();
+                // Ignora le righe vuote o di intestazione con #
                 if (trimmedLine && !trimmedLine.startsWith('#')) {
                     const parts = trimmedLine.split('|').map(str => str.trim());
                     if (parts.length >= 4) {
@@ -98,9 +86,12 @@
 
         function addMarkers(stations) {
             stations.forEach(station => {
-                new maplibregl.Marker()
+                const el = document.createElement('div');
+                el.className = 'marker';
+
+                new maplibregl.Marker({ element: el })
                     .setLngLat([station.lon, station.lat])
-                    .setPopup(new maplibregl.Popup({ offset: 25 }).setText(station.name))
+                    .setPopup(new maplibregl.Popup({ offset: 15 }).setText(station.name))
                     .addTo(map);
             });
         }
