@@ -2,25 +2,25 @@
 <html lang="en">
 <head>
     <title>Map of Viprinet Stations</title>
-    <meta property="og:description" content="Use MapLibre GL JS' built-in functions to visualize points as clusters." />
+    <meta property="og:description" content="MapLibre GL JS seismic stations map" />
     <meta charset='utf-8'>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel='stylesheet' href='https://unpkg.com/maplibre-gl/dist/maplibre-gl.css' />
     <script src='https://unpkg.com/maplibre-gl/dist/maplibre-gl.js'></script>
     <style>
         body { margin: 0; padding: 0; }
-        html, body, #map { height: 100%; }
+        html, body, #map { height: 100%; width: 100%; }
 
         .marker {
-            background-color: #FF6347; /* Colore del marker */
-            width: 20px;               /* Larghezza del marker */
-            height: 20px;              /* Altezza del marker */
-            border-radius: 50%;        /* Forma rotonda */
+            background-color: #FF6347;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            cursor: pointer;           /* Cursor a forma di puntatore */
-            box-shadow: 0 0 6px rgba(0,0,0,0.5); /* Ombra visiva */
+            cursor: pointer;
+            box-shadow: 0 0 6px rgba(0,0,0,0.5);
         }
     </style>
 </head>
@@ -29,10 +29,28 @@
     <script>
         const map = new maplibregl.Map({
             container: 'map',
-            style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/arcgis_hybrid.json',
+            style: {
+                'version': 8,
+                'sources': {
+                    'raster-tiles': {
+                        'type': 'raster',
+                        'tiles': ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                        'tileSize': 256,
+                        'minzoom': 0,
+                        'maxzoom': 19
+                    }
+                },
+                'layers': [
+                    {
+                        'id': 'simple-tiles',
+                        'type': 'raster',
+                        'source': 'raster-tiles'
+                    }
+                ]
+            },
             center: [10.4916, 43.9131],
             zoom: 5,
-            pitch: 45,
+            pitch: 0,
             bearing: 0,
             antialias: true
         });
@@ -56,7 +74,6 @@
 
             lines.forEach(line => {
                 const trimmedLine = line.trim();
-                // Ignora le righe vuote o le righe di intestazione che iniziano con #
                 if (trimmedLine && !trimmedLine.startsWith('#')) {
                     const parts = trimmedLine.split('|').map(str => str.trim());
                     if (parts.length >= 4) {
