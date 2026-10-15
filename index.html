@@ -1,155 +1,116 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
-    <title>Map IV Stations@INGV</title>
-    <meta property="og:description" content="Use MapLibre GL JS' built-in functions to visualize points as clusters." />
-    <meta charset='utf-8'>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel='stylesheet' href='https://unpkg.com/maplibre-gl/dist/maplibre-gl.css' />
-    <script src='https://unpkg.com/maplibre-gl/dist/maplibre-gl.js'></script>
-    <style>
-        body { margin: 0; padding: 0; }
-        html, body, #map { height: 100%; }
-
-        .marker {
-            background-color: #FF6347;  // Colore del marker
-            width: 20px;  // Larghezza del marker
-            height: 20px;  // Altezza del marker
-            border-radius: 50%;  // Forma rotonda
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;  // Cursor a forma di puntatore per indicare che è cliccabile
-            box-shadow: 0 0 6px rgba(0,0,0,0.5);  // Ombra per distacco visivo
-        }        }        
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stazioni INGV · Viprinet 3D</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;color:#142e40}html,body,#map{height:100%;width:100%}#map{background:#dde8ed}.panel{position:absolute;top:16px;left:16px;width:310px;max-width:calc(100% - 78px);max-height:calc(100% - 64px);overflow:auto;background:#fffffff2;padding:20px;border-radius:14px;box-shadow:0 5px 28px #16354b30}h1{font-size:21px;margin:0 0 6px}.sub,small{color:#526774;font-size:12px;line-height:1.5}label{display:block;margin:14px 0 5px;font-weight:600}select,input[type=search],button{font:inherit;padding:9px;border:1px solid #b5c8d2;border-radius:6px;background:white;width:100%}button{cursor:pointer;background:#155d78;color:white;border:0;margin-top:8px}button:disabled{opacity:.5;cursor:default}input[type=range]{width:100%}.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}#status,#mapStatus{font-size:12px;line-height:1.5;margin-top:12px;overflow-wrap:anywhere}.error{color:#a32424}.marker{width:15px;height:15px;border:2px solid white;background:#e85f35;border-radius:50%;box-shadow:0 1px 5px #0008;padding:0;margin:0}.marker:focus{outline:3px solid #155d78}.maplibregl-popup-content{font:13px system-ui;max-width:260px}.maplibregl-popup-close-button{width:auto;color:#142e40;background:transparent;margin:0}a{color:#155d78}details{margin-top:12px}summary{cursor:pointer;font-weight:600}#file{max-width:100%;font-size:12px}#terrain{width:auto} @media(max-width:600px){.panel{top:10px;left:10px;padding:12px;width:250px;max-height:45vh}h1{font-size:17px}}
+</style>
 </head>
 <body>
-    <div id="map"></div>
-    <script>
-        
-        /*
-        Style basemap
-        https://medium.com/@go2garret/free-basemap-tiles-for-maplibre-18374fab60cb
-        */
-
-        const map = new maplibregl.Map({
-            container: 'map',
-            style: 'https://raw.githubusercontent.com/go2garret/maps/main/src/assets/json/arcgis_hybrid.json', // Style URL
-            center: [10.4916, 43.9131], // Longitude, Latitude
-            zoom: 5,
-            pitch: 45,
-            bearing: 0,
-            antialias: true            
-        });
-
-        /*
-        const map = new maplibregl.Map({
-            container: 'map',
-            style: {
-                'id': 'raster',
-                'version': 8,
-                'name': 'Raster tiles',
-                'center': [0, 0],
-                'zoom': 0,
-                'sources': {
-                    'raster-tiles': {
-                        'type': 'raster',
-                        'tiles': ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-                        'tileSize': 256,
-                        'minzoom': 0,
-                        'maxzoom': 19
-                    }
-                },
-                'layers': [
-                    {
-                        'id': 'background',
-                        'type': 'background',
-                        'paint': {
-                            'background-color': '#e0dfdf'
-                        }
-                    },
-                    {
-                        'id': 'simple-tiles',
-                        'type': 'raster',
-                        'source': 'raster-tiles'
-                    }
-                ]
-            },
-            center: [10.4916, 43.9131],
-            zoom: 5,
-            pitch: 45,
-            bearing: 0,
-            antialias: true
-        });
-        */
-
-        fetch('https://webservices.ingv.it/fdsnws/station/1/query?network=IV&level=station&format=text&includerestricted=True&nodata=204')
-            .then(response => response.text())
-            .then(data => {
-                const stations = parseStations(data);
-                addMarkers(stations);
-                fitMapToMarkers(stations);
-            })
-            .catch(error => {
-                console.error('Error fetching seismic stations:', error);
-            });
-
-        function parseStations(data) {
-            const lines = data.split('\n').slice(1); // Ignore the first line (header)
-            return lines.filter(line => line).map(line => {
-                const [network, station, lat, lon, elevation, siteName, startTime, endTime] = line.split('|').map(str => str.trim());
-                return { lat: parseFloat(lat), lon: parseFloat(lon), name: network+"."+station };
-            });
-        }
-
-        function NEWaddMarkers(stations) {
-            stations.forEach(station => {
-                // Crea un elemento div per il marker
-                const el = document.createElement('div');
-                el.className = 'marker';  // Assegna una classe per lo styling
-                // Applica lo stile CSS direttamente o tramite una classe
-                el.style.backgroundColor = '#FF6347';  // Colore del marker
-                el.style.width = '20px';  // Larghezza del marker
-                el.style.height = '20px';  // Altezza del marker
-                el.style.borderRadius = '50%';  // Forma rotonda
-                el.style.display = 'flex';
-                el.style.alignItems = 'center';
-                el.style.justifyContent = 'center';
-        
-                // Crea il marker personalizzato
-                new maplibregl.Marker(el)
-                    .setLngLat([station.lon, station.lat])
-                    .setPopup(new maplibregl.Popup({ offset: 25 }).setText(station.name))
-                    .addTo(map);
-            });
-        }
-
-        function addMarkers(stations) {
-            stations.forEach(station => {
-                
-                new maplibregl.Marker()
-                    .setLngLat([station.lon, station.lat])
-                    .setPopup(new maplibregl.Popup({ offset: 25 }).setText(station.name))
-                    .addTo(map);
-            });
-        }
-
-        function fitMapToMarkers(stations) {
-            const lats = stations.map(station => station.lat);
-            const lons = stations.map(station => station.lon);
-            const bounds = new maplibregl.LngLatBounds(
-                new maplibregl.LngLat(Math.min(...lons), Math.min(...lats)),
-                new maplibregl.LngLat(Math.max(...lons), Math.max(...lats))
-            );
-            map.fitBounds(bounds, {
-                padding: { top: 50, bottom:50, left: 50, right: 50 }
-            });
-
-            
-        }
-
-        
-    </script>
+<div id="map" aria-label="Mappa delle stazioni sismiche INGV"></div>
+<section class="panel" aria-label="Controlli mappa">
+<h1>Stazioni INGV <span style="color:#e85f35">/ 3D</span></h1>
+<div class="sub">StationXML · Rete IV e selezione Viprinet</div>
+<label for="selection">Stazioni</label>
+<select id="selection"><option value="IV">Tutta la rete IV</option><option value="viprinet">Selezione Viprinet del file originale</option></select>
+<label for="search">Cerca codice o località</label><input id="search" type="search" placeholder="Es. LNSS, Gran Sasso…">
+<div class="row"><button id="reload" disabled>Aggiorna dati</button><button id="fit" disabled>Inquadra</button></div>
+<details><summary>Vista e rilievo</summary>
+<label for="basemap">Sfondo</label><select id="basemap"><option value="osm">OpenStreetMap</option><option value="satellite">Satellite Esri</option></select>
+<label><input id="terrain" type="checkbox" checked> Terreno 3D</label>
+<label for="exaggeration">Amplificazione rilievo: <output id="factor">1.5×</output></label><input id="exaggeration" type="range" min="1" max="3" step="0.1" value="1.5">
+<label for="pitch">Inclinazione: <output id="angle">55°</output></label><input id="pitch" type="range" min="0" max="80" value="55">
+<small>Avvicinati a una stazione per vedere il rilievo. Tasto destro + trascinamento per ruotare.</small>
+</details>
+<div id="status" role="status" aria-live="polite">Avvio mappa…</div>
+<div id="mapStatus" role="status" class="error"></div>
+<details><summary>Origine dati / importazione</summary><p class="sub">Una posizione per codice rete.stazione, usando l'epoca più recente disponibile. Sono incluse anche stazioni storiche: la presenza non indica trasmissione in tempo reale. La selezione Viprinet deriva dal file fornito, non da una classificazione INGV.</p>
+<p><a id="query" target="_blank" rel="noopener">Apri richiesta StationXML</a></p><label for="file">Importa StationXML o testo FDSN</label><input id="file" type="file" accept=".xml,.txt,.text">
+</details>
+</section>
+<script>
+'use strict';
+const VIPRINET='CUC,VLC,LNSS,MSAG,MRVN,LPEL,GIUL,VIVA,CAMP,ARVD,CESI,PARC,TRIV,MIDA,GALF,RAFF,LATE,TEOL,LPDG,MTTG,ALJA,SOI,PTMD,MILZ,FAVR,CRJA,LINA,GIB,PETRA,MCT,APRC,MELA,MOCO,SGG,MGR,CAR1,GATE,PIPA,MRLC,USI,CAFE,MRB1,MTMR,PAOL,PSB1,PTRJ,VITU,VULT,STAL,SGO,MTGR,MPG,MNO,GMB,ATN,MEU,LATB';
+const $=id=>document.getElementById(id);
+let map, stations=[], markers=[], controller, generation=0, loaded=false;
+function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error)}
+function queryURL(){const u=new URL('https://webservices.ingv.it/fdsnws/station/1/query');u.search=new URLSearchParams({level:'station',format:'xml',includerestricted:'true',nodata:'204',...($('selection').value==='IV'?{network:'IV'}:{station:VIPRINET})});return u.href}
+// Namespace-aware StationXML parsing; direct children avoid channel coordinates.
+function child(node,name){return Array.from(node.children).find(n=>n.localName===name)}
+function value(node,name){return child(node,name)?.textContent.trim()||''}
+function parseStations(text){
+ const result=[];
+ if(text.trim().startsWith('<')){
+  const doc=new DOMParser().parseFromString(text,'application/xml');
+  if(doc.getElementsByTagName('parsererror').length||doc.documentElement.localName!=='FDSNStationXML')throw new Error('La risposta non è un documento StationXML valido.');
+  for(const net of Array.from(doc.documentElement.children).filter(n=>n.localName==='Network')){
+   for(const sta of Array.from(net.children).filter(n=>n.localName==='Station'))result.push({network:net.getAttribute('code'),code:sta.getAttribute('code'),lat:value(sta,'Latitude'),lon:value(sta,'Longitude'),elevation:value(sta,'Elevation'),site:child(sta,'Site')?value(child(sta,'Site'),'Name'):'',start:sta.getAttribute('startDate')||'',end:sta.getAttribute('endDate')||''});
+  }
+ }else{
+  for(const line of text.split(/\r?\n/)){
+   if(!line.trim()||line.trim().startsWith('#'))continue;
+   const p=line.split('|').map(s=>s.trim());
+   if(p.length<8)throw new Error('Testo FDSN non valido: richiesto level=station.');
+   const [network,code,lat,lon,elevation,site,start,end]=p;result.push({network,code,lat,lon,elevation,site,start,end});
+  }
+ }
+ const unique=new Map();
+ for(const s of result){
+  if(!s.network||!s.code||s.lat===''||s.lon==='')continue;
+  s.lat=Number(s.lat);s.lon=Number(s.lon);
+  if(!Number.isFinite(s.lat)||!Number.isFinite(s.lon)||Math.abs(s.lat)>90||Math.abs(s.lon)>180)continue;
+  s.name=s.network+'.'+s.code;
+  const old=unique.get(s.name);
+  if(!old||(Date.parse(s.start)||0)>(Date.parse(old.start)||0))unique.set(s.name,s);
+ }
+ if(result.length&&!unique.size)throw new Error('Nessuna coordinata valida nel documento.');
+ return [...unique.values()].sort((a,b)=>a.name.localeCompare(b.name));
+}
+function visibleStations(){const term=$('search').value.trim().toLowerCase();return stations.filter(s=>(s.name+' '+s.site).toLowerCase().includes(term))}
+function popup(s){const box=document.createElement('div');const title=document.createElement('strong');title.textContent=s.name;box.append(title);for(const text of [s.site,`${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`,`Quota StationXML: ${s.elevation||'n/d'} m`,`Inizio epoca: ${s.start||'n/d'}`,`Fine epoca: ${s.end||'non specificata'}`]){const p=document.createElement('div');p.textContent=text;box.append(p)}const b=document.createElement('button');b.textContent='Esplora rilievo';b.onclick=()=>map.flyTo({center:[s.lon,s.lat],zoom:12,pitch:65});box.append(b);return box}
+function render(){
+ markers.forEach(m=>m.remove());markers=[];
+ for(const s of visibleStations()){
+  const el=document.createElement('button');el.className='marker';el.title=s.name;el.setAttribute('aria-label','Stazione '+s.name);
+  markers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([s.lon,s.lat]).setPopup(new maplibregl.Popup({offset:12}).setDOMContent(popup(s))).addTo(map));
+ }
+ $('fit').disabled=!markers.length;
+ status(`${markers.length} stazioni visualizzate / ${stations.length} caricate.`);
+}
+function fit(){const visible=visibleStations();if(!visible.length)return;const bounds=new maplibregl.LngLatBounds();visible.forEach(s=>bounds.extend([s.lon,s.lat]));const narrow=innerWidth<700;map.fitBounds(bounds,{padding:narrow?{top:innerHeight*.46,bottom:45,left:35,right:45}:{top:70,bottom:70,left:350,right:70},maxZoom:11,pitch:Number($('pitch').value),duration:900})}
+async function loadStations(){
+ const request=++generation;controller?.abort();controller=new AbortController();const activeController=controller;
+ const timeout=setTimeout(()=>activeController.abort(),45000);
+ const url=queryURL();$('query').href=url;status('Caricamento StationXML da INGV…');$('reload').disabled=true;
+ try{
+  const response=await fetch(url,{signal:activeController.signal});
+  if(!response.ok)throw new Error('INGV ha risposto HTTP '+response.status);
+  const data=response.status===204?[]:parseStations(await response.text());
+  if(request!==generation)return;
+  stations=data;render();if(data.length)fit();else status('Nessuna stazione restituita per questa selezione.');
+ }catch(e){if(request!==generation)return;status((e.name==='AbortError'?'Tempo di attesa INGV scaduto.':e.message)+' Puoi riprovare o importare lo StationXML dal link sotto.'+(stations.length?' Restano visibili i dati precedenti.':''),true)}
+ finally{clearTimeout(timeout);if(request===generation)$('reload').disabled=false}
+}
+function terrain(){map.setTerrain($('terrain').checked?{source:'dem',exaggeration:Number($('exaggeration').value)}:null);$('factor').textContent=$('exaggeration').value+'×'}
+async function init(){
+ if(!window.maplibregl)throw new Error('MapLibre non caricato: verifica connessione e accesso a unpkg.com.');
+ const dem={type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,encoding:'terrarium',maxzoom:15,attribution:'Elevation © Mapzen / AWS Open Data'};
+ map=new maplibregl.Map({container:'map',center:[12.5,42.5],zoom:5.4,pitch:55,maxPitch:80,maxZoom:18,style:{version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,maxzoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'},satellite:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:18,attribution:'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'},dem:dem,hilldem:{...dem}},layers:[{id:'osm',type:'raster',source:'osm'},{id:'satellite',type:'raster',source:'satellite',layout:{visibility:'none'}},{id:'hillshade',type:'hillshade',source:'hilldem',paint:{'hillshade-exaggeration':0.25}}],terrain:{source:'dem',exaggeration:1.5}}});
+ map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');map.addControl(new maplibregl.FullscreenControl(),'top-right');map.addControl(new maplibregl.ScaleControl(),'bottom-right');
+ map.on('error',e=>{console.error(e.error);$('mapStatus').textContent='Una risorsa cartografica non è disponibile. Prova a cambiare sfondo o disattivare il terreno 3D. Dettagli nella console del browser.'});
+ map.on('pitch',()=>{$('pitch').value=Math.round(map.getPitch());$('angle').textContent=Math.round(map.getPitch())+'°'});
+ // Bind on style.load: station fetch does not wait for all remote tiles to finish.
+ map.once('style.load',()=>{loaded=true;$('reload').disabled=false;loadStations()});
+ $('reload').onclick=loadStations;$('selection').onchange=()=>{if(loaded)loadStations()};$('fit').onclick=fit;$('search').oninput=()=>{if(loaded)render()};
+ $('basemap').onchange=()=>{if(!loaded)return;map.setLayoutProperty('osm','visibility',$('basemap').value==='osm'?'visible':'none');map.setLayoutProperty('satellite','visibility',$('basemap').value==='satellite'?'visible':'none');$('mapStatus').textContent=''};
+ $('terrain').onchange=()=>{if(loaded)terrain()};$('exaggeration').oninput=()=>{if(loaded)terrain()};$('pitch').oninput=()=>{if(loaded)map.setPitch(Number($('pitch').value))};
+ $('file').onchange=async()=>{const file=$('file').files[0];if(!file||!loaded)return;++generation;controller?.abort();$('reload').disabled=false;try{stations=parseStations(await file.text());render();fit()}catch(e){status(e.message,true)}finally{$('file').value=''}};
+}
+init().catch(e=>status('Impossibile avviare la mappa: '+e.message,true));
+</script>
 </body>
 </html>
