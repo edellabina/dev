@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Waveform INGV — ricerca segnale</title>
+  <title>INGV Waveform — Signal Search</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; max-width: 1150px; margin: 32px auto; padding: 0 20px; color: #172b43; background: #f5f7fa; }
@@ -28,34 +28,34 @@
   </style>
 </head>
 <body>
-  <h1>Waveform INGV</h1>
-  <p>Seleziona un canale e un intervallo fino a un’ora. Data e ora sono sempre in <strong>UTC</strong>.</p>
+  <h1>INGV Waveform</h1>
+  <p>Select a channel and a time range of up to one hour. All dates and times are in <strong>UTC</strong>.</p>
   <form id="query-form">
     <fieldset id="fields">
       <label>NETWORK<input id="network" value="IV" required maxlength="8" autocomplete="off"></label>
       <label>STATION<input id="station" value="LAV9" required maxlength="8" autocomplete="off"></label>
-      <label>LOCATION<input id="location" value="--" maxlength="8" placeholder="-- oppure vuoto" autocomplete="off"></label>
+      <label>LOCATION<input id="location" value="--" maxlength="8" placeholder="-- or blank" autocomplete="off"></label>
       <label>CHANNEL<input id="channel" value="HHZ" required maxlength="8" autocomplete="off"></label>
-      <label>DATA / TIME INIZIO (UTC)<input id="start" type="datetime-local" step="1" value="2026-01-01T00:00:00" required></label>
-      <label>Durata (secondi, massimo 3600)<input id="duration" type="number" min="1" max="3600" step="1" value="60" required></label>
+      <label>START DATE / TIME (UTC)<input id="start" type="datetime-local" step="1" value="2026-01-01T00:00:00" required></label>
+      <label>Duration (seconds, maximum 3600)<input id="duration" type="number" min="1" max="3600" step="1" value="60" required></label>
     </fieldset>
-    <p class="note">Un solo canale per richiesta, senza wildcard. LOCATION vuota o -- indica un codice location vuoto. 3600 secondi = 1 ora.</p>
-    <button id="load" type="submit">Carica waveform</button>
+    <p class="note">One channel per request; wildcards are not supported. A blank LOCATION or -- indicates an empty location code. 3600 seconds = 1 hour.</p>
+    <button id="load" type="submit">Load waveform</button>
   </form>
-  <div id="status" role="status" aria-live="polite">Pronto. Premi il pulsante per scaricare il segnale.</div>
-  <div id="plot" hidden><canvas id="waveform" role="img" aria-label="Sismogramma, ampiezza in conteggi rispetto al tempo in secondi"></canvas></div>
-  <p class="note">Dati INGV · Ampiezza in conteggi digitali, con media rimossa; risposta strumentale non rimossa. Eventuali intervalli mancanti non vengono interpolati.</p>
-  <a id="download" hidden>Scarica il miniSEED originale</a>
+  <div id="status" role="status" aria-live="polite">Ready. Click the button to download the waveform.</div>
+  <div id="plot" hidden><canvas id="waveform" role="img" aria-label="Seismogram, amplitude in counts versus time in seconds"></canvas></div>
+  <p class="note">INGV data · Amplitude in digital counts, with the mean removed; instrument response has not been removed. Missing intervals are not interpolated.</p>
+  <a id="download" hidden>Download original miniSEED</a>
   <details id="log-panel">
-    <summary>Log delle chiamate webservice (<span id="log-count">0</span>)</summary>
-    <p class="note">Orari UTC. Gli URL sono cliccabili. I log restano solo in questa pagina e si azzerano ricaricandola.</p>
-    <button id="clear-log" type="button">Svuota log</button>
+    <summary>Web service request logs (<span id="log-count">0</span>)</summary>
+    <p class="note">UTC timestamps. URLs are clickable. Logs are kept only on this page and cleared when the page is reloaded.</p>
+    <button id="clear-log" type="button">Clear logs</button>
     <ol id="logs"></ol>
   </details>
-  <p class="note">Versione 2.0 · Form e log · Solo HTML / JavaScript</p>
-  <noscript>Per visualizzare il segnale devi abilitare JavaScript.</noscript>
+  <p class="note">Version 2.1 · Form and logs · HTML / JavaScript only</p>
+  <noscript>Enable JavaScript to display the waveform.</noscript>
   <script type="module">
-    // Dipendenza bloccata a una versione precisa; nessun Python o backend richiesto.
+    // Dependency pinned to a specific version; no Python or backend required.
     const LIBRARY = 'https://cdn.jsdelivr.net/npm/seisplotjs@3.2.7/dist/seisplotjs_3.2.7_standalone.mjs';
     let startMs, endMs, duration, selection;
     const form = document.getElementById('query-form');
@@ -81,13 +81,13 @@
       const code = id => document.getElementById(id).value.trim().toUpperCase();
       const net = code('network'), sta = code('station'), loc = code('location') || '--', cha = code('channel');
       for (const [name, value] of Object.entries({NETWORK: net, STATION: sta, LOCATION: loc, CHANNEL: cha})) {
-        if (!(name === 'LOCATION' && value === '--') && !/^[A-Z0-9]{1,8}$/.test(value)) throw new Error(name + ': inserisci un singolo codice alfanumerico, senza wildcard.');
+        if (!(name === 'LOCATION' && value === '--') && !/^[A-Z0-9]{1,8}$/.test(value)) throw new Error(name + ': enter a single alphanumeric code without wildcards.');
       }
       const seconds = Number(document.getElementById('duration').value);
-      if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) throw new Error('La durata deve essere un intero tra 1 e 3600 secondi.');
+      if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) throw new Error('Duration must be a whole number between 1 and 3600 seconds.');
       const input = document.getElementById('start').value;
       const begin = Date.parse(input + 'Z');
-      if (!input || !Number.isFinite(begin)) throw new Error('Inserisci una data e ora UTC valida.');
+      if (!input || !Number.isFinite(begin)) throw new Error('Enter a valid UTC start date and time.');
       const end = begin + seconds * 1000;
       const url = new URL('https://webservices.ingv.it/fdsnws/dataselect/1/query');
       url.search = new URLSearchParams({net, sta, loc, cha, starttime: new Date(begin).toISOString().slice(0,-1), endtime: new Date(end).toISOString().slice(0,-1)}).toString();
@@ -127,8 +127,8 @@
         ctx.strokeStyle = '#e3e8ef'; ctx.beginPath(); ctx.moveTo(x(t), top); ctx.lineTo(x(t), bottom); ctx.stroke();
         ctx.textAlign = 'center'; ctx.fillText(Number(t.toFixed(2)).toString(), x(t), bottom + 21);
       }
-      ctx.fillText('Tempo [s] da ' + new Date(startMs).toISOString(), (left + right) / 2, height - 9);
-      ctx.textAlign = 'left'; ctx.fillText('Ampiezza [conteggi] · media rimossa', left, 15);
+      ctx.fillText('Time [s] from ' + new Date(startMs).toISOString(), (left + right) / 2, height - 9);
+      ctx.textAlign = 'left'; ctx.fillText('Amplitude [counts] · mean removed', left, 15);
       ctx.save(); ctx.beginPath(); ctx.rect(left, top, right-left, bottom-top); ctx.clip();
       ctx.strokeStyle = '#165cb4'; ctx.lineWidth = 1;
       let previous = null;
@@ -149,71 +149,71 @@
       event.preventDefault();
       let query;
       try { query = readQuery(); }
-      catch (error) { message(error.message, true); log('VALIDAZIONE: ' + error.message); return; }
+      catch (error) { message(error.message, true); log('VALIDATION: ' + error.message); return; }
       selection = query; startMs = query.begin; endMs = query.end; duration = query.seconds;
       fields.disabled = true;
       button.disabled = true; plot.hidden = true; download.hidden = true; segments = [];
       if (downloadUrl) { URL.revokeObjectURL(downloadUrl); downloadUrl = null; }
       let timer, controller;
       try {
-        message('Caricamento del lettore miniSEED…');
-        if (!library) log('Caricamento libreria miniSEED', LIBRARY);
+        message('Loading miniSEED reader…');
+        if (!library) log('Loading miniSEED library', LIBRARY);
         library = library || await Promise.race([
           import(LIBRARY),
-          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Timeout durante il caricamento della libreria. Riprova e verifica la connessione a cdn.jsdelivr.net.')), 30000); })
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Library loading timed out. Try again and check your connection to cdn.jsdelivr.net.')), 30000); })
         ]);
         clearTimeout(timer);
-        message('Scarico il dato reale da INGV…');
+        message('Downloading waveform data from INGV…');
         controller = new AbortController();
         timer = setTimeout(() => controller.abort(), 45000);
-        log('GET dataselect · ' + query.id + ' · durata ' + duration + ' s', query.url);
+        log('GET dataselect · ' + query.id + ' · duration ' + duration + ' s', query.url);
         const requestStart = performance.now();
         const response = await fetch(query.url, {signal: controller.signal});
-        log('Risposta HTTP ' + response.status + ' · ' + Math.round(performance.now() - requestStart) + ' ms', query.url);
+        log('HTTP response ' + response.status + ' · ' + Math.round(performance.now() - requestStart) + ' ms', query.url);
         if (response.status === 204 || response.status === 404) {
-          message('Nessun dato disponibile per ' + query.id + ' nell’intervallo richiesto.');
+          message('No data available for ' + query.id + ' in the requested time range.');
           return;
         }
-        if (!response.ok) throw new Error('Il servizio INGV ha risposto HTTP ' + response.status);
+        if (!response.ok) throw new Error('The INGV service returned HTTP ' + response.status);
         const buffer = await response.arrayBuffer();
         clearTimeout(timer);
-        if (!buffer.byteLength) throw new Error('Il servizio ha restituito un file vuoto.');
-        log('Download completato · ' + buffer.byteLength + ' byte · ' + Math.round(performance.now() - requestStart) + ' ms');
+        if (!buffer.byteLength) throw new Error('The service returned an empty file.');
+        log('Download complete · ' + buffer.byteLength + ' bytes · ' + Math.round(performance.now() - requestStart) + ' ms');
         const records = library.miniseed.parseDataRecords(buffer);
         let count = 0, sum = 0, minimum = Infinity, maximum = -Infinity;
         for (const record of records) {
           const h = record.header;
           if (h.netCode.trim() !== query.net || h.staCode.trim() !== query.sta || h.locCode.trim() !== (query.loc === '--' ? '' : query.loc) || h.chanCode.trim() !== query.cha) continue;
           const rate = h.sampleRate;
-          if (!(rate > 0)) throw new Error('Frequenza di campionamento non valida.');
+          if (!(rate > 0)) throw new Error('Invalid sampling rate.');
           const data = record.decompress();
           const recordMs = h.startTime.toMillis();
-          // I servizi possono restituire record più estesi dell’intervallo richiesto.
+          // Services may return records extending beyond the requested time range.
           const first = Math.max(0, Math.ceil((startMs - recordMs) * rate / 1000 - 1e-6));
           const last = Math.min(data.length, Math.ceil((endMs - recordMs) * rate / 1000 - 1e-6));
           if (last <= first) continue;
           const values = data.slice(first, last);
           for (const value of values) {
-            if (!Number.isFinite(value)) throw new Error('Campioni non validi nel miniSEED.');
+            if (!Number.isFinite(value)) throw new Error('Invalid samples in the miniSEED data.');
             sum += value; count++; minimum = Math.min(minimum, value); maximum = Math.max(maximum, value);
           }
           segments.push({time: (recordMs - startMs) / 1000 + first / rate, rate, values});
         }
-        if (!count) throw new Error('Nessun campione del canale richiesto nell’intervallo selezionato.');
+        if (!count) throw new Error('No samples for the requested channel in the selected time range.');
         segments.sort((a,b) => a.time - b.time);
         mean = sum / count;
         amplitude = Math.max(Math.abs(minimum - mean), Math.abs(maximum - mean), 1) * 1.08;
-        log('Decodifica completata · ' + records.length + ' record · ' + count + ' campioni selezionati');
-        canvas.setAttribute('aria-label', 'Sismogramma ' + query.id + ', ampiezza in conteggi, tempo in secondi');
+        log('Decoding complete · ' + records.length + ' records · ' + count + ' selected samples');
+        canvas.setAttribute('aria-label', 'Seismogram ' + query.id + ', amplitude in counts, time in seconds');
         plot.hidden = false; draw();
         const first = segments[0], last = segments[segments.length - 1];
-        message('Dato caricato correttamente.\nTrace: ' + query.id + '\nStart: ' + new Date(startMs + first.time * 1000).toISOString() + '\nEnd: ' + new Date(startMs + (last.time + (last.values.length - 1) / last.rate) * 1000).toISOString() + '\nSampling rate: ' + [...new Set(segments.map(s => s.rate))].join(', ') + ' Hz\nCampioni: ' + count + '\nDimensione miniSEED: ' + buffer.byteLength + ' byte');
+        message('Data loaded successfully.\nTrace: ' + query.id + '\nStart: ' + new Date(startMs + first.time * 1000).toISOString() + '\nEnd: ' + new Date(startMs + (last.time + (last.values.length - 1) / last.rate) * 1000).toISOString() + '\nSampling rate: ' + [...new Set(segments.map(s => s.rate))].join(', ') + ' Hz\nSamples: ' + count + '\nminiSEED size: ' + buffer.byteLength + ' bytes');
         downloadUrl = URL.createObjectURL(new Blob([buffer], {type: 'application/vnd.fdsn.mseed'}));
         download.href = downloadUrl; download.download = query.id + '.' + new Date(startMs).toISOString().replace(/[:]/g, '-') + '.mseed'; download.hidden = false;
       } catch (error) {
         console.error(error);
-        log('ERRORE: ' + (error.name === 'AbortError' ? 'Timeout INGV dopo 45 secondi' : error.message));
-        message(error.name === 'AbortError' ? 'Timeout: il servizio INGV non ha risposto entro 45 secondi. Riprova.' : 'Caricamento non riuscito.\n' + error.message + '\nVerifica la connessione e la console del browser (F12) per i dettagli.', true);
+        log('ERROR: ' + (error.name === 'AbortError' ? 'INGV request timed out after 45 seconds' : error.message));
+        message(error.name === 'AbortError' ? 'Timeout: the INGV service did not respond within 45 seconds. Try again.' : 'Loading failed.\n' + error.message + '\nCheck your connection and the browser console (F12) for details.', true);
       } finally {
         clearTimeout(timer); button.disabled = false; fields.disabled = false;
       }
