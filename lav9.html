@@ -1,117 +1,152 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="it">
 <head>
-  <meta charset="UTF-8">
-  <title>IV.LAV9 waveform reale</title>
-
-<link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
-<script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>  
-
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IV.LAV9 — waveform reale INGV</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 30px; }
-    button { padding: 10px 18px; font-size: 16px; }
-    #status { margin-top: 15px; white-space: pre-wrap; }
-    #plot { margin-top: 20px; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 1150px; margin: 32px auto; padding: 0 20px; color: #172b43; background: #f5f7fa; }
+    h1 { font-size: clamp(24px, 4vw, 34px); }
+    button { border: 0; border-radius: 7px; background: #165cb4; color: white; padding: 12px 20px; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    #status { white-space: pre-wrap; padding: 16px; border-radius: 8px; background: white; margin: 18px 0; overflow-wrap: anywhere; }
+    #status[data-error="true"] { border-left: 4px solid #c43434; }
+    #plot { background: white; padding: 12px; border-radius: 10px; }
+    canvas { display: block; width: 100%; height: 380px; }
+    .note { font-size: 14px; color: #526479; line-height: 1.6; }
+    a { color: #165cb4; }
   </style>
 </head>
-
 <body>
+  <h1>Waveform reale IV.LAV9</h1>
+  <p>60 secondi del canale HHZ: 1 gennaio 2026, dalle 00:00:00 alle 00:01:00 UTC.</p>
+  <button id="load" type="button">Carica IV.LAV9</button>
+  <div id="status" role="status" aria-live="polite">Pronto. Premi il pulsante per scaricare il segnale.</div>
+  <div id="plot" hidden><canvas id="waveform" role="img" aria-label="Sismogramma LAV9, ampiezza in conteggi rispetto al tempo in secondi"></canvas></div>
+  <p class="note">Dati INGV · Location vuota (--) · Ampiezza in conteggi digitali, con media rimossa; risposta strumentale non rimossa. Eventuali intervalli mancanti non vengono interpolati.</p>
+  <a id="download" hidden>Scarica il miniSEED originale</a>
+  <noscript>Per visualizzare il segnale devi abilitare JavaScript.</noscript>
+  <script type="module">
+    // Dipendenza bloccata a una versione precisa; nessun Python o backend richiesto.
+    const LIBRARY = 'https://cdn.jsdelivr.net/npm/seisplotjs@3.2.7/dist/seisplotjs_3.2.7_standalone.mjs';
+    const START = '2026-01-01T00:00:00';
+    const END = '2026-01-01T00:01:00';
+    const startMs = Date.parse(START + 'Z');
+    const endMs = Date.parse(END + 'Z');
+    const url = new URL('https://webservices.ingv.it/fdsnws/dataselect/1/query');
+    url.search = new URLSearchParams({net: 'IV', sta: 'LAV9', loc: '--', cha: 'HHZ', starttime: START, endtime: END}).toString();
+    const button = document.getElementById('load');
+    const status = document.getElementById('status');
+    const plot = document.getElementById('plot');
+    const canvas = document.getElementById('waveform');
+    const download = document.getElementById('download');
+    let library, segments = [], mean = 0, amplitude = 1, downloadUrl;
 
-<h1>Waveform reale IV.LAV9</h1>
+    function message(text, error = false) {
+      status.textContent = text;
+      status.dataset.error = String(error);
+    }
 
-<p>
-  Scarica 60 secondi di segnale miniSEED da INGV e lo disegna con ObsPy.
-</p>
+    function draw() {
+      if (!segments.length || plot.hidden) return;
+      const width = canvas.clientWidth, height = canvas.clientHeight;
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      const ctx = canvas.getContext('2d');
+      ctx.scale(ratio, ratio);
+      const left = Math.min(88, width * .25), right = width - 18, top = 28, bottom = height - 55;
+      const x = t => left + t / 60 * (right - left);
+      const y = a => (top + bottom) / 2 - a / amplitude * (bottom - top) / 2;
+      ctx.font = '12px system-ui';
+      for (let i = -2; i <= 2; i++) {
+        const value = amplitude * i / 2, yy = y(value);
+        ctx.strokeStyle = '#e3e8ef'; ctx.beginPath(); ctx.moveTo(left, yy); ctx.lineTo(right, yy); ctx.stroke();
+        ctx.fillStyle = '#526479'; ctx.textAlign = 'right'; ctx.fillText(value.toPrecision(3), left - 8, yy + 4);
+      }
+      for (let t = 0; t <= 60; t += 10) {
+        ctx.strokeStyle = '#e3e8ef'; ctx.beginPath(); ctx.moveTo(x(t), top); ctx.lineTo(x(t), bottom); ctx.stroke();
+        ctx.textAlign = 'center'; ctx.fillText(String(t), x(t), bottom + 21);
+      }
+      ctx.fillText('Tempo [s] dal 2026-01-01 00:00:00 UTC', (left + right) / 2, height - 9);
+      ctx.textAlign = 'left'; ctx.fillText('Ampiezza [conteggi] · media rimossa', left, 15);
+      ctx.save(); ctx.beginPath(); ctx.rect(left, top, right-left, bottom-top); ctx.clip();
+      ctx.strokeStyle = '#165cb4'; ctx.lineWidth = 1;
+      let previous = null;
+      ctx.beginPath();
+      for (const segment of segments) {
+        for (let i = 0; i < segment.values.length; i++) {
+          const t = segment.time + i / segment.rate;
+          const xx = x(t), yy = y(segment.values[i] - mean);
+          if (previous !== null && t > previous && t - previous <= 1.5 / segment.rate) ctx.lineTo(xx, yy);
+          else ctx.moveTo(xx, yy);
+          previous = t;
+        }
+      }
+      ctx.stroke(); ctx.restore();
+    }
 
-<button py-click="load_lav9()">Carica IV.LAV9</button>
-
-<div id="status">Pronto.</div>
-<div id="plot"></div>
-
-<py-config>
-packages = [
-  "numpy",
-  "matplotlib",
-  "obspy"
-]
-</py-config>
-
-<py-script>
-from pyscript import document
-from pyodide.http import pyfetch
-from io import BytesIO
-
-import numpy as np
-import matplotlib
-matplotlib.use("module://matplotlib_pyodide.html5_canvas_backend")
-import matplotlib.pyplot as plt
-
-from obspy import read
-
-async def load_lav9():
-    status = document.getElementById("status")
-    plot_div = document.getElementById("plot")
-
-    status.innerText = "Scarico il dato reale da INGV..."
-    plot_div.innerHTML = ""
-
-    # 60 secondi di waveform reale
-    url = (
-        "https://webservices.ingv.it/fdsnws/dataselect/1/query"
-        "?net=IV"
-        "&sta=LAV9"
-        "&loc=00"
-        "&cha=HHZ"
-        "&starttime=2026-01-01T00:00:00"
-        "&endtime=2026-01-01T00:01:00"
-    )
-
-    try:
-        response = await pyfetch(url)
-
-        if response.status != 200:
-            status.innerText = f"Errore INGV: HTTP {response.status}"
-            return
-
-        data = await response.bytes()
-
-        # ObsPy legge il miniSEED da memoria
-        st = read(BytesIO(data), format="MSEED")
-
-        tr = st[0]
-        tr.detrend("demean")
-
-        fs = tr.stats.sampling_rate
-        t = np.arange(tr.stats.npts) / fs
-
-        document.pyodideMplTarget = plot_div
-
-        plt.figure(figsize=(11, 4))
-        plt.plot(t, tr.data)
-        plt.title(f"{tr.id} - {tr.stats.starttime}")
-        plt.xlabel("Tempo [s]")
-        plt.ylabel("Ampiezza")
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-
-        status.innerText = (
-            "Dato caricato correttamente.\n"
-            f"Trace: {tr.id}\n"
-            f"Start: {tr.stats.starttime}\n"
-            f"End: {tr.stats.endtime}\n"
-            f"Sampling rate: {tr.stats.sampling_rate} Hz\n"
-            f"Campioni: {tr.stats.npts}"
-        )
-
-    except Exception as e:
-        status.innerText = (
-            "Errore durante il caricamento.\n\n"
-            + str(e)
-            + "\n\nPossibile causa: CORS, servizio INGV non disponibile, "
-              "oppure ObsPy non compatibile nel browser."
-        )
-</py-script>
-
+    button.addEventListener('click', async () => {
+      button.disabled = true; plot.hidden = true; download.hidden = true; segments = [];
+      if (downloadUrl) { URL.revokeObjectURL(downloadUrl); downloadUrl = null; }
+      let timer, controller;
+      try {
+        message('Caricamento del lettore miniSEED…');
+        library = library || await Promise.race([
+          import(LIBRARY),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Timeout durante il caricamento della libreria. Riprova e verifica la connessione a cdn.jsdelivr.net.')), 30000); })
+        ]);
+        clearTimeout(timer);
+        message('Scarico il dato reale da INGV…');
+        controller = new AbortController();
+        timer = setTimeout(() => controller.abort(), 45000);
+        const response = await fetch(url, {signal: controller.signal});
+        if (response.status === 204 || response.status === 404) {
+          message('Nessun dato disponibile per IV.LAV9.--.HHZ nell’intervallo richiesto.');
+          return;
+        }
+        if (!response.ok) throw new Error('Il servizio INGV ha risposto HTTP ' + response.status);
+        const buffer = await response.arrayBuffer();
+        clearTimeout(timer);
+        if (!buffer.byteLength) throw new Error('Il servizio ha restituito un file vuoto.');
+        const records = library.miniseed.parseDataRecords(buffer);
+        let count = 0, sum = 0, minimum = Infinity, maximum = -Infinity;
+        for (const record of records) {
+          const h = record.header;
+          if (h.netCode.trim() !== 'IV' || h.staCode.trim() !== 'LAV9' || h.locCode.trim() !== '' || h.chanCode.trim() !== 'HHZ') continue;
+          const rate = h.sampleRate;
+          if (!(rate > 0)) throw new Error('Frequenza di campionamento non valida.');
+          const data = record.decompress();
+          const recordMs = h.startTime.toMillis();
+          // I servizi possono restituire record più estesi dell’intervallo richiesto.
+          const first = Math.max(0, Math.ceil((startMs - recordMs) * rate / 1000 - 1e-6));
+          const last = Math.min(data.length, Math.ceil((endMs - recordMs) * rate / 1000 - 1e-6));
+          if (last <= first) continue;
+          const values = data.slice(first, last);
+          for (const value of values) {
+            if (!Number.isFinite(value)) throw new Error('Campioni non validi nel miniSEED.');
+            sum += value; count++; minimum = Math.min(minimum, value); maximum = Math.max(maximum, value);
+          }
+          segments.push({time: (recordMs - startMs) / 1000 + first / rate, rate, values});
+        }
+        if (!count) throw new Error('Nessun campione del canale richiesto nell’intervallo selezionato.');
+        segments.sort((a,b) => a.time - b.time);
+        mean = sum / count;
+        amplitude = Math.max(Math.abs(minimum - mean), Math.abs(maximum - mean), 1) * 1.08;
+        plot.hidden = false; draw();
+        const first = segments[0], last = segments[segments.length - 1];
+        message('Dato caricato correttamente.\nTrace: IV.LAV9..HHZ\nStart: ' + new Date(startMs + first.time * 1000).toISOString() + '\nEnd: ' + new Date(startMs + (last.time + (last.values.length - 1) / last.rate) * 1000).toISOString() + '\nSampling rate: ' + [...new Set(segments.map(s => s.rate))].join(', ') + ' Hz\nCampioni: ' + count + '\nDimensione miniSEED: ' + buffer.byteLength + ' byte');
+        downloadUrl = URL.createObjectURL(new Blob([buffer], {type: 'application/vnd.fdsn.mseed'}));
+        download.href = downloadUrl; download.download = 'IV.LAV9.HHZ.2026-01-01.mseed'; download.hidden = false;
+      } catch (error) {
+        console.error(error);
+        message(error.name === 'AbortError' ? 'Timeout: il servizio INGV non ha risposto entro 45 secondi. Riprova.' : 'Caricamento non riuscito.\n' + error.message + '\nVerifica la connessione e la console del browser (F12) per i dettagli.', true);
+      } finally {
+        clearTimeout(timer); button.disabled = false;
+      }
+    });
+    new ResizeObserver(draw).observe(canvas);
+  </script>
 </body>
 </html>
