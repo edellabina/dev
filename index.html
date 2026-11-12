@@ -19,13 +19,14 @@ button{cursor:pointer;background:#155d78;color:white;border:0;margin-top:8px}
 button:disabled{opacity:.5;cursor:default}
 input[type=range]{width:100%}.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}
 #status,#mapStatus{font-size:12px;line-height:1.5;margin-top:12px;overflow-wrap:anywhere}.error{color:#a32424}
-/* Marker wrapper is 15x15: labels are positioned outside its box, so MapLibre anchors the point correctly. */
-.station-marker{position:relative;width:15px;height:15px;overflow:visible}
+/* IMPORTANT: a custom MapLibre marker MUST remain absolutely positioned.
+   position:relative caused every seismic station to shift on the map. */
+.station-marker.maplibregl-marker{position:absolute;top:0;left:0;width:15px;height:15px;margin:0;padding:0;overflow:visible}
 .station-dot{display:block;position:absolute;inset:0;width:15px;height:15px;padding:0;margin:0;border:2px solid #fff;border-radius:50%;background:var(--station-color,#e85f35);box-shadow:0 1px 5px #0008;cursor:pointer}
 .station-dot:focus-visible{outline:3px solid #155d78;outline-offset:3px}
 .station-label{position:absolute;left:21px;top:50%;transform:translateY(-50%);display:block;white-space:nowrap;padding:3px 7px;border-radius:5px;border:1px solid #c3d1d9;background:#fffffff0;color:#173b50;font:600 12px/1.35 system-ui,sans-serif;box-shadow:0 1px 5px #0002;pointer-events:none;user-select:none}
 .station-label.is-hidden{display:none}
-.station-marker:focus-within .station-label{display:block!important;z-index:2}
+.station-marker:focus-within .station-label:not(.labels-disabled){display:block!important}
 .maplibregl-popup-content{font:13px system-ui;max-width:260px}.maplibregl-popup-close-button{width:auto;color:#142e40;background:transparent;margin:0}
 a{color:#155d78}details{margin-top:12px}summary{cursor:pointer;font-weight:600}#file{max-width:100%;font-size:12px}#terrain{width:auto}
 .option{display:flex;align-items:center;gap:8px;margin:10px 0;font-weight:500}.option input{margin:0;flex:none;accent-color:#155d78}
@@ -75,14 +76,12 @@ const NETWORK_COLORS={IV:'#e76539',MN:'#2786d2',XO:'#8f65c5'};
 const PALETTE=['#168b78','#b95280','#b38a20','#3977a9','#8560b2','#b45d42','#547b34','#ca4f54','#008f9d','#8b6c42','#6979ba','#a75296'];
 function networkColor(code){
  if(Object.prototype.hasOwnProperty.call(NETWORK_COLORS,code))return NETWORK_COLORS[code];
- // Deterministic hashing: the same network receives the same colour after every reload.
  let hash=2166136261;
  for(const char of String(code)){hash^=char.charCodeAt(0);hash=Math.imul(hash,16777619)}
  return PALETTE[(hash>>>0)%PALETTE.length];
 }
 function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error)}
 function queryURL(){const u=new URL('https://webservices.ingv.it/fdsnws/station/1/query');u.search=new URLSearchParams({level:'station',format:'xml',includerestricted:'true',nodata:'204',...($('selection').value==='IV'?{network:'IV'}:{station:VIPRINET})});return u.href}
-// Namespace-aware StationXML parsing; direct children avoid channel coordinates.
 function child(node,name){return Array.from(node.children).find(n=>n.localName===name)}
 function value(node,name){return child(node,name)?.textContent.trim()||''}
 function parseStations(text){
@@ -114,7 +113,11 @@ function parseStations(text){
  return [...unique.values()].sort((a,b)=>a.name.localeCompare(b.name));
 }
 function visibleStations(){const term=$('search').value.trim().toLowerCase();return stations.filter(s=>(s.name+' '+s.site).toLowerCase().includes(term))}
-function popup(s){const box=document.createElement('div');const title=document.createElement('strong');title.textContent=s.name;box.append(title);for(const text of [s.site,`${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`,`Quota StationXML: ${s.elevation||'n/d'} m`,`Inizio epoca: ${s.start||'n/d'}`,`Fine epoca: ${s.end||'non specificata'}`]){const p=document.createElement('div');p.textContent=text;box.append(p)}const b=document.createElement('button');b.textContent='Esplora rilievo';b.onclick=()=>map.flyTo({center:[s.lon,s.lat],zoom:12,pitch:65});box.append(b);return box}
+function popup(s){
+ const box=document.createElement('div');const title=document.createElement('strong');title.textContent=s.name;box.append(title);
+ for(const text of [s.site,`${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`,`Quota StationXML: ${s.elevation||'n/d'} m`,`Inizio epoca: ${s.start||'n/d'}`,`Fine epoca: ${s.end||'non specificata'}`]){const p=document.createElement('div');p.textContent=text;box.append(p)}
+ const b=document.createElement('button');b.textContent='Esplora rilievo';b.onclick=()=>map.flyTo({center:[s.lon,s.lat],zoom:12,pitch:65});box.append(b);return box;
+}
 function updateLegend(visible){
  const counts=new Map();for(const s of visible)counts.set(s.network,(counts.get(s.network)||0)+1);
  const legend=$('legend');legend.replaceChildren();
@@ -126,29 +129,27 @@ function updateLegend(visible){
   entry.append(dot,text);legend.append(entry);
  }
 }
-// Labels are positioned by MapLibre markers. This lightweight collision pass hides only labels,
-// never station dots, and does not need a glyph server or another JavaScript dependency.
 function scheduleLabelLayout(){if(layoutPending)return;layoutPending=true;requestAnimationFrame(()=>{layoutPending=false;layoutLabels()})}
 function layoutLabels(){
  const show=$('showLabels').checked,avoid=$('avoidOverlap').checked;
- for(const item of markers)item.label.classList.toggle('is-hidden',!show);
+ // Make all labels measurable first, including those hidden by the last collision pass.
+ for(const item of markers){item.label.classList.toggle('labels-disabled',!show);item.label.classList.toggle('is-hidden',!show)}
  if(!show||!avoid||!map)return;
- const width=map.getContainer().clientWidth,height=map.getContainer().clientHeight;
- const cellSize=72,grid=new Map();
- for(const item of markers){
-  const p=map.project([item.station.lon,item.station.lat]);
-  const left=p.x+18,top=p.y-12;
-  const textWidth=item.label.offsetWidth||Math.ceil(item.station.name.length*8+14);
-  const textHeight=item.label.offsetHeight||23;
-  const right=left+textWidth,bottom=top+textHeight;
-  if(right<0||left>width||bottom<0||top>height){item.label.classList.add('is-hidden');continue}
-  const x0=Math.floor((left-3)/cellSize),x1=Math.floor((right+3)/cellSize),y0=Math.floor((top-3)/cellSize),y1=Math.floor((bottom+3)/cellSize);
+ // Work in screen coordinates, reading actual DOM rectangles instead of inferring
+ // offsets from map.project(). This also works for tilted / 3-D maps.
+ const viewport=map.getContainer().getBoundingClientRect();
+ const boxes=markers.map(item=>({label:item.label,rect:item.label.getBoundingClientRect()}));
+ const cellSize=72,grid=new Map(),margin=3;
+ for(const {label,rect} of boxes){
+  const left=rect.left-viewport.left,top=rect.top-viewport.top,right=rect.right-viewport.left,bottom=rect.bottom-viewport.top;
+  if(right<0||left>viewport.width||bottom<0||top>viewport.height){label.classList.add('is-hidden');continue}
+  const x0=Math.floor((left-margin)/cellSize),x1=Math.floor((right+margin)/cellSize),y0=Math.floor((top-margin)/cellSize),y1=Math.floor((bottom+margin)/cellSize);
   let overlaps=false;
   for(let x=x0;x<=x1&&!overlaps;x++)for(let y=y0;y<=y1&&!overlaps;y++){
    for(const box of grid.get(x+','+y)||[]){if(left<box.right&&right>box.left&&top<box.bottom&&bottom>box.top){overlaps=true;break}}
   }
-  if(overlaps){item.label.classList.add('is-hidden');continue}
-  const box={left:left-3,right:right+3,top:top-3,bottom:bottom+3};
+  if(overlaps){label.classList.add('is-hidden');continue}
+  const box={left:left-margin,right:right+margin,top:top-margin,bottom:bottom+margin};
   for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++){
    const key=x+','+y;if(!grid.has(key))grid.set(key,[]);grid.get(key).push(box);
   }
@@ -166,12 +167,16 @@ function render(){
   const marker=new maplibregl.Marker({element:root,anchor:'center'}).setLngLat([s.lon,s.lat]).setPopup(new maplibregl.Popup({offset:12}).setDOMContent(popup(s))).addTo(map);
   markers.push({station:s,marker,label,root});
  }
- $('fit').disabled=!markers.length;
- updateLegend(visible);
+ $('fit').disabled=!markers.length;updateLegend(visible);
  status(`${markers.length} stazioni visualizzate / ${stations.length} caricate.`);
  scheduleLabelLayout();
 }
-function fit(){const visible=visibleStations();if(!visible.length)return;const bounds=new maplibregl.LngLatBounds();visible.forEach(s=>bounds.extend([s.lon,s.lat]));const narrow=innerWidth<700;map.fitBounds(bounds,{padding:narrow?{top:innerHeight*.46,bottom:45,left:35,right:45}:{top:70,bottom:70,left:350,right:70},maxZoom:11,pitch:Number($('pitch').value),duration:900})}
+function fit(){
+ const visible=visibleStations();if(!visible.length)return;
+ const bounds=new maplibregl.LngLatBounds();visible.forEach(s=>bounds.extend([s.lon,s.lat]));
+ const narrow=innerWidth<700;
+ map.fitBounds(bounds,{padding:narrow?{top:innerHeight*.46,bottom:45,left:35,right:45}:{top:70,bottom:70,left:350,right:70},maxZoom:11,pitch:Number($('pitch').value),duration:900});
+}
 async function loadStations(){
  const request=++generation;controller?.abort();controller=new AbortController();const activeController=controller;
  const timeout=setTimeout(()=>activeController.abort(),45000);
@@ -193,7 +198,8 @@ async function init(){
  map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');map.addControl(new maplibregl.FullscreenControl(),'top-right');map.addControl(new maplibregl.ScaleControl(),'bottom-right');
  map.on('error',e=>{console.error(e.error);$('mapStatus').textContent='Una risorsa cartografica non è disponibile. Prova a cambiare sfondo o disattivare il terreno 3D. Dettagli nella console del browser.'});
  map.on('pitch',()=>{$('pitch').value=Math.round(map.getPitch());$('angle').textContent=Math.round(map.getPitch())+'°'});
- map.on('moveend',scheduleLabelLayout);map.on('resize',scheduleLabelLayout);map.on('terrain',scheduleLabelLayout);
+ // Labels are repositioned by MapLibre continuously; collision checks track those updates.
+ map.on('move',scheduleLabelLayout);map.on('moveend',scheduleLabelLayout);map.on('resize',scheduleLabelLayout);
  // Bind on style.load: station fetch does not wait for all remote tiles to finish.
  map.once('style.load',()=>{loaded=true;$('reload').disabled=false;loadStations()});
  $('reload').onclick=loadStations;$('selection').onchange=()=>{if(loaded)loadStations()};$('fit').onclick=fit;$('search').oninput=()=>{if(loaded)render()};
