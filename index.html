@@ -1,326 +1,1095 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Stazioni INGV · Clustering 3D (rev. 2)</title>
-<meta name="app-version" content="stationxml2map-cluster-fix-20261112-r2">
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css">
-<script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
-<style>
-*{box-sizing:border-box}
-html,body,#map{height:100%;width:100%}
-body{margin:0;font:14px system-ui,sans-serif;color:#142e40}
-#map{background:#dde8ed}
-.panel{position:absolute;z-index:5;top:16px;left:16px;width:310px;max-width:calc(100% - 78px);max-height:calc(100% - 64px);overflow:auto;background:#fffffff2;padding:20px;border-radius:14px;box-shadow:0 5px 28px #16354b30}
-h1{font-size:21px;margin:0 0 6px}.sub,small{color:#526774;font-size:12px;line-height:1.5}
-label{display:block;margin:14px 0 5px;font-weight:600}
-select,input[type=search],button{font:inherit;padding:9px;border:1px solid #b5c8d2;border-radius:6px;background:white;width:100%}
-button{cursor:pointer;background:#155d78;color:white;border:0;margin-top:8px}
-button:disabled{opacity:.5;cursor:default}
-input[type=range]{width:100%}.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}
-#status,#mapStatus{font-size:12px;line-height:1.5;margin-top:12px;overflow-wrap:anywhere}.error{color:#a32424}
-/* IMPORTANT: a custom MapLibre marker MUST remain absolutely positioned.
-   position:relative caused every seismic station to shift on the map. */
-.station-marker.maplibregl-marker{position:absolute;top:0;left:0;width:15px;height:15px;margin:0;padding:0;overflow:visible}
-.station-dot{display:block;position:absolute;inset:0;width:15px;height:15px;padding:0;margin:0;border:2px solid #fff;border-radius:50%;background:var(--station-color,#e85f35);box-shadow:0 1px 5px #0008;cursor:pointer}
-.station-dot:focus-visible{outline:3px solid #155d78;outline-offset:3px}
-.station-label{position:absolute;left:21px;top:50%;transform:translateY(-50%);display:block;white-space:nowrap;padding:3px 7px;border-radius:5px;border:1px solid #c3d1d9;background:#fffffff0;color:#173b50;font:600 12px/1.35 system-ui,sans-serif;box-shadow:0 1px 5px #0002;pointer-events:none;user-select:none}
-.station-label.is-hidden{display:none}
-.cluster-marker.maplibregl-marker{position:absolute;top:0;left:0;display:block;width:40px;height:40px;padding:0;margin:0;overflow:visible}
-.cluster-bubble{display:flex;align-items:center;justify-content:center;width:100%;height:100%;padding:0;margin:0;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 9px #0018;color:white;background:var(--cluster-color,#526b7b);font:700 13px/1 system-ui,sans-serif;cursor:pointer}
-.cluster-bubble:focus-visible{outline:3px solid #155d78;outline-offset:3px}
-.cluster-marker[data-size="large"]{width:48px;height:48px}
-.cluster-marker[data-size="xlarge"]{width:56px;height:56px}
-.cluster-popup-list{max-height:240px;overflow:auto;display:flex;flex-direction:column;gap:6px;margin-top:8px}
-.cluster-popup-list button{margin:0;padding:6px 9px;text-align:left}
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="app-version" content="stationxml2map-clustering-r3-refactor">
+  <title>INGV Seismic Stations | 3D Map</title>
 
-.station-marker:focus-within .station-label:not(.labels-disabled){display:block!important}
-.maplibregl-popup-content{font:13px system-ui;max-width:260px}.maplibregl-popup-close-button{width:auto;color:#142e40;background:transparent;margin:0}
-a{color:#155d78}details{margin-top:12px}summary{cursor:pointer;font-weight:600}#file{max-width:100%;font-size:12px}#terrain{width:auto}
-.option{display:flex;align-items:center;gap:8px;margin:10px 0;font-weight:500}.option input{margin:0;flex:none;accent-color:#155d78}
-#legend{display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:9px}
-.legend-item{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#314959}
-.legend-dot{width:11px;height:11px;display:inline-block;border:2px solid white;border-radius:50%;box-shadow:0 0 0 1px #acbac3}
-.legend-empty{color:#617581;font-size:12px}
-@media(max-width:600px){.panel{top:10px;left:10px;padding:12px;width:250px;max-height:45vh}h1{font-size:17px}}
-</style>
+  <!-- MapLibre is the only JavaScript dependency, loaded from the existing CDN. -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
+
+  <style>
+    /* ---------------------------------------------------------------
+       1. Page layout and controls
+       --------------------------------------------------------------- */
+    * { box-sizing: border-box; }
+    html, body, #map { width: 100%; height: 100%; }
+    body { margin: 0; font: 14px system-ui, sans-serif; color: #142e40; }
+    #map { background: #dde8ed; }
+
+    .panel {
+      position: absolute;
+      z-index: 5;
+      top: 16px;
+      left: 16px;
+      width: 310px;
+      max-width: calc(100% - 78px);
+      max-height: calc(100% - 64px);
+      overflow: auto;
+      padding: 20px;
+      border-radius: 14px;
+      background: #fffffff2;
+      box-shadow: 0 5px 28px #16354b30;
+    }
+
+    h1 { margin: 0 0 6px; font-size: 21px; }
+    h3 { margin: 10px 0; font-size: 14px; }
+    .accent { color: #e85f35; }
+    .sub, small { color: #526774; font-size: 12px; line-height: 1.5; }
+    label { display: block; margin: 14px 0 5px; font-weight: 600; }
+    a { color: #155d78; }
+    details { margin-top: 12px; }
+    summary { cursor: pointer; font-weight: 600; }
+
+    select, input[type="search"], button {
+      width: 100%;
+      padding: 9px;
+      border: 1px solid #b5c8d2;
+      border-radius: 6px;
+      background: white;
+      font: inherit;
+    }
+    button { margin-top: 8px; border: 0; background: #155d78; color: white; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    input[type="range"] { width: 100%; }
+    #file { max-width: 100%; font-size: 12px; }
+    #terrain { width: auto; }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; min-width: 0; }
+    .option { display: flex; align-items: center; gap: 8px; margin: 10px 0; font-weight: 500; }
+    .option input { flex: none; margin: 0; accent-color: #155d78; }
+    #status, #mapStatus { margin-top: 12px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .error { color: #a32424; }
+
+    /* ---------------------------------------------------------------
+       2. Individual stations and their labels
+
+       IMPORTANT: MapLibre positions each custom marker with a transform.
+       Never use position: relative on .maplibregl-marker, otherwise
+       markers drift away from their actual geographic coordinates.
+       --------------------------------------------------------------- */
+    .station-marker.maplibregl-marker {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 15px;
+      height: 15px;
+      margin: 0;
+      padding: 0;
+      overflow: visible;
+    }
+
+    .station-dot {
+      display: block;
+      position: absolute;
+      inset: 0;
+      width: 15px;
+      height: 15px;
+      margin: 0;
+      padding: 0;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      background: var(--station-color, #e85f35);
+      box-shadow: 0 1px 5px #0008;
+      cursor: pointer;
+    }
+
+    .station-dot:focus-visible,
+    .cluster-bubble:focus-visible { outline: 3px solid #155d78; outline-offset: 3px; }
+
+    .station-label {
+      position: absolute;
+      left: 21px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: block;
+      padding: 3px 7px;
+      border: 1px solid #c3d1d9;
+      border-radius: 5px;
+      background: #fffffff0;
+      color: #173b50;
+      box-shadow: 0 1px 5px #0002;
+      font: 600 12px/1.35 system-ui, sans-serif;
+      white-space: nowrap;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .station-label.is-hidden { display: none; }
+    /* Focus reveals a collided label, but never a user-disabled label. */
+    .station-marker:focus-within .station-label:not(.labels-disabled) { display: block !important; }
+
+    /* ---------------------------------------------------------------
+       3. Cluster markers, popups and network legend
+       --------------------------------------------------------------- */
+    .cluster-marker.maplibregl-marker {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 40px;
+      height: 40px;
+      margin: 0;
+      padding: 0;
+      overflow: visible;
+    }
+    .cluster-marker[data-size="large"] { width: 48px; height: 48px; }
+    .cluster-marker[data-size="xlarge"] { width: 56px; height: 56px; }
+
+    .cluster-bubble {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      background: var(--cluster-color, #526b7b);
+      color: #fff;
+      box-shadow: 0 2px 9px #0018;
+      font: 700 13px/1 system-ui, sans-serif;
+      cursor: pointer;
+    }
+
+    .cluster-popup-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 240px;
+      margin-top: 8px;
+      overflow: auto;
+    }
+    .cluster-popup-list button { margin: 0; padding: 6px 9px; text-align: left; }
+    .maplibregl-popup-content { max-width: 260px; font: 13px system-ui, sans-serif; }
+    .maplibregl-popup-close-button { width: auto; margin: 0; background: transparent; color: #142e40; }
+
+    #legend { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 9px; }
+    .legend-item { display: inline-flex; align-items: center; gap: 5px; color: #314959; font-size: 12px; }
+    .legend-dot {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border: 2px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 0 1px #acbac3;
+    }
+    .legend-empty { color: #617581; font-size: 12px; }
+
+    @media (max-width: 600px) {
+      .panel { top: 10px; left: 10px; width: 250px; max-height: 45vh; padding: 12px; }
+      h1 { font-size: 17px; }
+    }
+  </style>
 </head>
 <body>
-<div id="map" aria-label="Mappa delle stazioni sismiche INGV"></div>
-<section class="panel" aria-label="Controlli mappa">
-<h1>Stazioni INGV <span style="color:#e85f35">/ 3D</span></h1>
-<h3><a href="https://github.com/edellabina/">github.com/edellabina</a></h3>
-<div class="sub">StationXML · Rete IV e selezione Viprinet</div>
-<label for="selection">Stazioni</label>
-<select id="selection"><option value="IV">Tutta la rete IV</option><option value="viprinet">Selezione Viprinet del file originale</option></select>
-<label for="search">Cerca codice o località</label><input id="search" type="search" placeholder="Es. LNSS, Gran Sasso…">
-<div class="row"><button id="reload" disabled>Aggiorna dati</button><button id="fit" disabled>Inquadra</button></div>
-<details open><summary>Stazioni ed etichette</summary>
-<label class="option"><input id="showLabels" type="checkbox" checked> Mostra etichette RETE.STAZIONE</label>
-<label class="option"><input id="colorByNetwork" type="checkbox" checked> Colori distinti per rete</label>
-<label class="option"><input id="avoidOverlap" type="checkbox" checked> Evita sovrapposizione delle etichette</label>
-<label class="option"><input id="enableCluster" type="checkbox" checked> Raggruppa marker vicini (clustering)</label>
-<label for="clusterRadius">Raggio cluster: <output id="clusterRadiusOut">50 px</output></label><input type="range" id="clusterRadius" min="20" max="100" step="10" value="50">
-<label for="clusterMaxZoom">Zoom massimo clustering: <output id="clusterMaxZoomOut">12</output></label><input type="range" id="clusterMaxZoom" min="8" max="16" step="1" value="12">
-<label class="option"><input id="clusterNetworkColors" type="checkbox" checked> Colora cluster omogenei per rete</label>
-<small>Un cluster mostra quante stazioni contiene; clic per espanderlo. Marker e label delle stazioni singole rimangono indipendenti dal servizio dei font della mappa.</small>
-<div id="legend" aria-label="Legenda delle reti"></div>
-</details>
-<details><summary>Vista e rilievo</summary>
-<label for="basemap">Sfondo</label><select id="basemap"><option value="osm">OpenStreetMap</option><option value="satellite">Satellite Esri</option></select>
-<label><input id="terrain" type="checkbox" checked> Terreno 3D</label>
-<label for="exaggeration">Amplificazione rilievo: <output id="factor">1.5×</output></label><input id="exaggeration" type="range" min="1" max="3" step="0.1" value="1.5">
-<label for="pitch">Inclinazione: <output id="angle">55°</output></label><input id="pitch" type="range" min="0" max="80" value="55">
-<small>Avvicinati a una stazione per vedere il rilievo. Tasto destro + trascinamento per ruotare.</small>
-</details>
-<div id="status" role="status" aria-live="polite">Avvio mappa…</div>
-<small>StationXML2Map · clustering r2</small>
-<div id="mapStatus" role="status" class="error"></div>
-<details><summary>Origine dati / importazione</summary><p class="sub">Una posizione per codice rete.stazione, usando l'epoca più recente disponibile. Sono incluse anche stazioni storiche: la presenza non indica trasmissione in tempo reale. La selezione Viprinet deriva dal file fornito, non da una classificazione INGV.</p>
-<p><a id="query" target="_blank" rel="noopener">Apri richiesta StationXML</a></p><label for="file">Importa StationXML o testo FDSN</label><input id="file" type="file" accept=".xml,.txt,.text">
-</details>
-</section>
-<script>
-'use strict';
-const VIPRINET='CUC,VLC,LNSS,MSAG,MRVN,LPEL,GIUL,VIVA,CAMP,ARVD,CESI,PARC,TRIV,MIDA,GALF,RAFF,LATE,TEOL,LPDG,MTTG,ALJA,SOI,PTMD,MILZ,FAVR,CRJA,LINA,GIB,PETRA,MCT,APRC,MELA,MOCO,SGG,MGR,CAR1,GATE,PIPA,MRLC,USI,CAFE,MRB1,MTMR,PAOL,PSB1,PTRJ,VITU,VULT,STAL,SGO,MTGR,MPG,MNO,GMB,ATN,MEU,LATB';
-const $=id=>document.getElementById(id);
-let map,stations=[],markers=[],controller,generation=0,loaded=false,layoutPending=false,renderPending=false;
-let renderStats={stations:0,groups:0,clusters:0,labels:0};
-const NETWORK_COLORS={IV:'#e76539',MN:'#2786d2',XO:'#8f65c5'};
-const PALETTE=['#168b78','#b95280','#b38a20','#3977a9','#8560b2','#b45d42','#547b34','#ca4f54','#008f9d','#8b6c42','#6979ba','#a75296'];
-function networkColor(code){
- if(Object.prototype.hasOwnProperty.call(NETWORK_COLORS,code))return NETWORK_COLORS[code];
- let hash=2166136261;
- for(const char of String(code)){hash^=char.charCodeAt(0);hash=Math.imul(hash,16777619)}
- return PALETTE[(hash>>>0)%PALETTE.length];
-}
-function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error)}
-function queryURL(){const u=new URL('https://webservices.ingv.it/fdsnws/station/1/query');u.search=new URLSearchParams({level:'station',format:'xml',includerestricted:'true',nodata:'204',...($('selection').value==='IV'?{network:'IV'}:{station:VIPRINET})});return u.href}
-function child(node,name){return Array.from(node.children).find(n=>n.localName===name)}
-function value(node,name){return child(node,name)?.textContent.trim()||''}
-function parseStations(text){
- const result=[];
- if(text.trim().startsWith('<')){
-  const doc=new DOMParser().parseFromString(text,'application/xml');
-  if(doc.getElementsByTagName('parsererror').length||doc.documentElement.localName!=='FDSNStationXML')throw new Error('La risposta non è un documento StationXML valido.');
-  for(const net of Array.from(doc.documentElement.children).filter(n=>n.localName==='Network')){
-   for(const sta of Array.from(net.children).filter(n=>n.localName==='Station'))result.push({network:net.getAttribute('code'),code:sta.getAttribute('code'),lat:value(sta,'Latitude'),lon:value(sta,'Longitude'),elevation:value(sta,'Elevation'),site:child(sta,'Site')?value(child(sta,'Site'),'Name'):'',start:sta.getAttribute('startDate')||'',end:sta.getAttribute('endDate')||''});
-  }
- }else{
-  for(const line of text.split(/\r?\n/)){
-   if(!line.trim()||line.trim().startsWith('#'))continue;
-   const p=line.split('|').map(s=>s.trim());
-   if(p.length<8)throw new Error('Testo FDSN non valido: richiesto level=station.');
-   const [network,code,lat,lon,elevation,site,start,end]=p;result.push({network,code,lat,lon,elevation,site,start,end});
-  }
- }
- const unique=new Map();
- for(const s of result){
-  if(!s.network||!s.code||s.lat===''||s.lon==='')continue;
-  s.lat=Number(s.lat);s.lon=Number(s.lon);
-  if(!Number.isFinite(s.lat)||!Number.isFinite(s.lon)||Math.abs(s.lat)>90||Math.abs(s.lon)>180)continue;
-  s.name=s.network+'.'+s.code;
-  const old=unique.get(s.name);
-  if(!old||(Date.parse(s.start)||0)>(Date.parse(old.start)||0))unique.set(s.name,s);
- }
- if(result.length&&!unique.size)throw new Error('Nessuna coordinata valida nel documento.');
- return [...unique.values()].sort((a,b)=>a.name.localeCompare(b.name));
-}
-function visibleStations(){const term=$('search').value.trim().toLowerCase();return stations.filter(s=>(s.name+' '+s.site).toLowerCase().includes(term))}
-function popup(s){
- const box=document.createElement('div');const title=document.createElement('strong');title.textContent=s.name;box.append(title);
- for(const text of [s.site,`${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`,`Quota StationXML: ${s.elevation||'n/d'} m`,`Inizio epoca: ${s.start||'n/d'}`,`Fine epoca: ${s.end||'non specificata'}`]){const p=document.createElement('div');p.textContent=text;box.append(p)}
- const b=document.createElement('button');b.textContent='Esplora rilievo';b.onclick=()=>map.flyTo({center:[s.lon,s.lat],zoom:12,pitch:65});box.append(b);return box;
-}
-function updateLegend(visible){
- const counts=new Map();for(const s of visible)counts.set(s.network,(counts.get(s.network)||0)+1);
- const legend=$('legend');legend.replaceChildren();
- if(!counts.size){const empty=document.createElement('span');empty.className='legend-empty';empty.textContent='Nessuna rete da visualizzare';legend.append(empty);return}
- for(const [network,count] of [...counts].sort((a,b)=>a[0].localeCompare(b[0]))){
-  const entry=document.createElement('span');entry.className='legend-item';
-  const dot=document.createElement('span');dot.className='legend-dot';dot.style.backgroundColor=$('colorByNetwork').checked?networkColor(network):'#e85f35';
-  const text=document.createElement('span');text.textContent=`${network} (${count})`;
-  entry.append(dot,text);legend.append(entry);
- }
-}
-function scheduleLabelLayout(){if(layoutPending)return;layoutPending=true;requestAnimationFrame(()=>{layoutPending=false;layoutLabels()})}
-function layoutLabels(){
- const show=$('showLabels').checked,avoid=$('avoidOverlap').checked;
- // Make all labels measurable first, including those hidden by the last collision pass.
- for(const item of markers){if(!item.label)continue;item.label.classList.toggle('labels-disabled',!show);item.label.classList.toggle('is-hidden',!show)}
- if(!show||!avoid||!map)return;
- // Work in screen coordinates, reading actual DOM rectangles instead of inferring
- // offsets from map.project(). This also works for tilted / 3-D maps.
- const viewport=map.getContainer().getBoundingClientRect();
- const boxes=markers.filter(item=>item.label).map(item=>({label:item.label,rect:item.label.getBoundingClientRect()}));
- const cellSize=72,grid=new Map(),margin=3;
- for(const {label,rect} of boxes){
-  const left=rect.left-viewport.left,top=rect.top-viewport.top,right=rect.right-viewport.left,bottom=rect.bottom-viewport.top;
-  if(right<0||left>viewport.width||bottom<0||top>viewport.height){label.classList.add('is-hidden');continue}
-  const x0=Math.floor((left-margin)/cellSize),x1=Math.floor((right+margin)/cellSize),y0=Math.floor((top-margin)/cellSize),y1=Math.floor((bottom+margin)/cellSize);
-  let overlaps=false;
-  for(let x=x0;x<=x1&&!overlaps;x++)for(let y=y0;y<=y1&&!overlaps;y++){
-   for(const box of grid.get(x+','+y)||[]){if(left<box.right&&right>box.left&&top<box.bottom&&bottom>box.top){overlaps=true;break}}
-  }
-  if(overlaps){label.classList.add('is-hidden');continue}
-  const box={left:left-margin,right:right+margin,top:top-margin,bottom:bottom+margin};
-  for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++){
-   const key=x+','+y;if(!grid.has(key))grid.set(key,[]);grid.get(key).push(box);
-  }
- }
-}
-// Screen-space clustering runs entirely in this HTML, without glyphs, workers or
-// additional libraries. MapLibre still anchors EVERY marker at real geographic coordinates.
-function clusterGroups(visible){
- if(!visible.length)return [];
- const zoom=map.getZoom();
- const enabled=$('enableCluster').checked&&zoom<=Number($('clusterMaxZoom').value);
- const radius=Number($('clusterRadius').value);
- const points=visible.map((s,i)=>({s,i,p:map.project([s.lon,s.lat])}));
- const parent=points.map((_,i)=>i),rank=points.map(()=>0);
- function find(i){while(parent[i]!==i){parent[i]=parent[parent[i]];i=parent[i]}return i}
- function union(a,b){a=find(a);b=find(b);if(a===b)return;if(rank[a]<rank[b]){const t=a;a=b;b=t}parent[b]=a;if(rank[a]===rank[b])rank[a]++}
- // A simple spatial hash keeps clustering near-linear even with thousands of stations.
- const grid=new Map();
- for(let i=0;i<points.length;i++){
-  const {s,p}=points[i];
-  if(!Number.isFinite(p.x)||!Number.isFinite(p.y))continue;
-  if(enabled){
-   const gx=Math.floor(p.x/radius),gy=Math.floor(p.y/radius);
-   for(let x=gx-1;x<=gx+1;x++)for(let y=gy-1;y<=gy+1;y++){
-    for(const j of grid.get(x+','+y)||[]){const q=points[j].p;const dx=q.x-p.x,dy=q.y-p.y;if(dx*dx+dy*dy<=radius*radius)union(i,j)}
-   }
-   const key=gx+','+gy;if(!grid.has(key))grid.set(key,[]);grid.get(key).push(i);
-  }else{
-   // At high zoom keep coincident coordinates selectable via a station-list popup.
-   const key=s.lon.toFixed(8)+','+s.lat.toFixed(8);
-   for(const j of grid.get(key)||[])union(i,j);
-   if(!grid.has(key))grid.set(key,[]);grid.get(key).push(i);
-  }
- }
- const groups=new Map();
- for(let i=0;i<points.length;i++){const key=find(i);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(points[i])}
- return [...groups.values()];
-}
-function clusterCenter(group){
- // Average longitude/latitude is sufficient for the regional INGV data (without date-line wrapping).
- // Pixel-space grouping is calculated with map.project(); MapLibre anchors the resulting marker.
- let lon=0,lat=0;
- for(const item of group){lon+=item.s.lon;lat+=item.s.lat}
- return [lon/group.length,lat/group.length];
-}
-function clusterPopup(items,coordinates){
- const el=document.createElement('div'),title=document.createElement('strong');
- title.textContent=items.length+' stazioni nello stesso gruppo';el.append(title);
- const list=document.createElement('div');list.className='cluster-popup-list';
- for(const s of items.sort((a,b)=>a.name.localeCompare(b.name))){
-  const b=document.createElement('button');b.type='button';b.textContent=s.name;
-  b.addEventListener('click',()=>new maplibregl.Popup({offset:15,maxWidth:'330px'}).setLngLat([s.lon,s.lat]).setDOMContent(popup(s)).addTo(map));
-  list.append(b);
- }
- el.append(list);
- new maplibregl.Popup({offset:18,maxWidth:'300px'}).setLngLat(coordinates).setDOMContent(el).addTo(map);
-}
-function addSingleMarker(s){
- const root=document.createElement('div');root.className='station-marker';
- root.style.setProperty('--station-color',$('colorByNetwork').checked?networkColor(s.network):'#e85f35');
- const dot=document.createElement('button');dot.type='button';dot.className='station-dot';dot.title=s.name;dot.setAttribute('aria-label','Stazione '+s.name);
- const label=document.createElement('span');label.className='station-label';label.textContent=s.name;
- root.append(dot,label);
- const marker=new maplibregl.Marker({element:root,anchor:'center'}).setLngLat([s.lon,s.lat]).setPopup(new maplibregl.Popup({offset:12}).setDOMContent(popup(s))).addTo(map);
- markers.push({station:s,marker,label,root});
-}
-function addClusterMarker(group){
- const items=group.map(item=>item.s),coordinates=clusterCenter(group);
- const networks=new Set(items.map(s=>s.network));
- const color=$('colorByNetwork').checked&&$('clusterNetworkColors').checked&&networks.size===1?networkColor(items[0].network):'#526b7b';
- const root=document.createElement('div');root.className='cluster-marker';
- root.dataset.size=items.length>=50?'xlarge':items.length>=10?'large':'normal';
- root.style.setProperty('--cluster-color',color);
- const dot=document.createElement('button');dot.type='button';dot.className='cluster-bubble';dot.textContent=items.length;
- dot.title=items.length+' stazioni, clic per espandere';dot.setAttribute('aria-label',dot.title);
- root.append(dot);
- dot.addEventListener('click',event=>{
-  event.stopPropagation();
-  const max=Number($('clusterMaxZoom').value),zoom=map.getZoom();
-  const allCoincident=items.every(s=>Math.abs(s.lon-items[0].lon)<1e-8&&Math.abs(s.lat-items[0].lat)<1e-8);
-  if(allCoincident||zoom>max){clusterPopup(items,coordinates);return}
-  const target=Math.min(18,zoom+2);
-  map.easeTo({center:coordinates,zoom:target,duration:650});
- });
- const marker=new maplibregl.Marker({element:root,anchor:'center'}).setLngLat(coordinates).addTo(map);
- markers.push({cluster:items,marker,root});
-}
-function scheduleRender(){if(renderPending||!loaded)return;renderPending=true;requestAnimationFrame(()=>{renderPending=false;render()})}
-function render(){
- if(!loaded||!map)return;
- markers.forEach(item=>item.marker.remove());markers=[];
- const visible=visibleStations();
- const groups=clusterGroups(visible);
- // Do not create off-screen DOM markers. Re-group automatically on every moveend.
- const view=map.getContainer(),width=view.clientWidth,height=view.clientHeight;
- let clusters=0,single=0;
- for(const group of groups){
-  const coords=group.length===1?[group[0].s.lon,group[0].s.lat]:clusterCenter(group);
-  const point=map.project(coords);
-  if(!Number.isFinite(point.x)||!Number.isFinite(point.y)||point.x < -130||point.x>width+130||point.y < -130||point.y>height+130)continue;
-  if(group.length===1){addSingleMarker(group[0].s);single++}else{addClusterMarker(group);clusters++}
- }
- $('fit').disabled=!visible.length;
- updateLegend(visible);
- renderStats={stations:visible.length,groups:groups.length,clusters,labels:single};
- status(`${visible.length} stazioni selezionate / ${stations.length} caricate · ${clusters} cluster e ${single} marker singoli visibili sulla mappa.`);
- scheduleLabelLayout();
-}
-function fit(){
- const visible=visibleStations();if(!visible.length)return;
- const bounds=new maplibregl.LngLatBounds();visible.forEach(s=>bounds.extend([s.lon,s.lat]));
- const narrow=innerWidth<700;
- map.fitBounds(bounds,{padding:narrow?{top:innerHeight*.46,bottom:45,left:35,right:45}:{top:70,bottom:70,left:350,right:70},maxZoom:11,pitch:Number($('pitch').value),duration:900});
-}
-async function loadStations(){
- const request=++generation;controller?.abort();controller=new AbortController();const activeController=controller;
- const timeout=setTimeout(()=>activeController.abort(),45000);
- const url=queryURL();$('query').href=url;status('Caricamento StationXML da INGV…');$('reload').disabled=true;
- try{
-  const response=await fetch(url,{signal:activeController.signal});
-  if(!response.ok)throw new Error('INGV ha risposto HTTP '+response.status);
-  const data=response.status===204?[]:parseStations(await response.text());
-  if(request!==generation)return;
-  stations=data;render();if(data.length)fit();else status('Nessuna stazione restituita per questa selezione.');
- }catch(e){if(request!==generation)return;status((e.name==='AbortError'?'Tempo di attesa INGV scaduto.':e.message)+' Puoi riprovare o importare lo StationXML dal link sotto.'+(stations.length?' Restano visibili i dati precedenti.':''),true)}
- finally{clearTimeout(timeout);if(request===generation)$('reload').disabled=false}
-}
-function terrain(){map.setTerrain($('terrain').checked?{source:'dem',exaggeration:Number($('exaggeration').value)}:null);$('factor').textContent=$('exaggeration').value+'×'}
-async function init(){
- if(!window.maplibregl)throw new Error('MapLibre non caricato: verifica connessione e accesso a unpkg.com.');
- const dem={type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,encoding:'terrarium',maxzoom:15,attribution:'Elevation © Mapzen / AWS Open Data'};
- map=new maplibregl.Map({container:'map',center:[12.5,42.5],zoom:5.4,pitch:55,maxPitch:80,maxZoom:18,style:{version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,maxzoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'},satellite:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:18,attribution:'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'},dem:dem,hilldem:{...dem}},layers:[{id:'osm',type:'raster',source:'osm'},{id:'satellite',type:'raster',source:'satellite',layout:{visibility:'none'}},{id:'hillshade',type:'hillshade',source:'hilldem',paint:{'hillshade-exaggeration':0.25}}],terrain:{source:'dem',exaggeration:1.5}}});
- map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');map.addControl(new maplibregl.FullscreenControl(),'top-right');map.addControl(new maplibregl.ScaleControl(),'bottom-right');
- map.on('error',e=>{console.error(e.error);$('mapStatus').textContent='Una risorsa cartografica non è disponibile. Prova a cambiare sfondo o disattivare il terreno 3D. Dettagli nella console del browser.'});
- map.on('pitch',()=>{$('pitch').value=Math.round(map.getPitch());$('angle').textContent=Math.round(map.getPitch())+'°'});
- // Labels are repositioned by MapLibre continuously; collision checks track those updates.
- map.on('move',scheduleLabelLayout);
- map.on('moveend',scheduleRender);
- map.on('resize',scheduleRender);
- // Bind on style.load: station fetch does not wait for all remote tiles to finish.
- // HTML markers do not depend on the map style or the remote glyph server.
- // Fetch data immediately; a slow terrain or raster tile must not block station display.
- map.once('style.load',scheduleRender);
- $('reload').onclick=loadStations;$('selection').onchange=()=>{if(loaded)loadStations()};$('fit').onclick=fit;$('search').oninput=()=>{if(loaded)render()};
- $('showLabels').onchange=scheduleLabelLayout;
- $('avoidOverlap').onchange=scheduleLabelLayout;
- $('colorByNetwork').onchange=render;
- $('clusterNetworkColors').onchange=render;
- $('enableCluster').onchange=render;
- for(const id of ['clusterRadius','clusterMaxZoom']){$(id).oninput=()=>{$(id+'Out').textContent=$(id).value+(id==='clusterRadius'?' px':'')};$(id).onchange=render;}
- $('basemap').onchange=()=>{if(!loaded)return;map.setLayoutProperty('osm','visibility',$('basemap').value==='osm'?'visible':'none');map.setLayoutProperty('satellite','visibility',$('basemap').value==='satellite'?'visible':'none');$('mapStatus').textContent=''};
- $('terrain').onchange=()=>{if(loaded){terrain();scheduleRender()}};$('exaggeration').oninput=()=>{if(loaded){terrain();scheduleRender()}};$('pitch').oninput=()=>{if(loaded)map.setPitch(Number($('pitch').value))};
- $('file').onchange=async()=>{const file=$('file').files[0];if(!file||!loaded)return;++generation;controller?.abort();$('reload').disabled=false;try{stations=parseStations(await file.text());render();fit()}catch(e){status(e.message,true)}finally{$('file').value=''}};
- loaded=true;$('reload').disabled=false;loadStations();
-}
-init().catch(e=>status('Impossibile avviare la mappa: '+e.message,true));
-</script>
+  <div id="map" aria-label="Map of INGV seismic stations"></div>
+
+  <section class="panel" aria-label="Map controls">
+    <h1>INGV Stations <span class="accent">/ 3D</span></h1>
+    <h3><a href="https://github.com/edellabina/">github.com/edellabina</a></h3>
+    <div class="sub">StationXML · IV network and Viprinet selection</div>
+
+    <label for="selection">Station selection</label>
+    <select id="selection">
+      <option value="IV">All IV network stations</option>
+      <option value="viprinet">Viprinet station selection</option>
+    </select>
+
+    <label for="search">Search by station code or site</label>
+    <input id="search" type="search" placeholder="e.g. LNSS, Gran Sasso…">
+    <div class="row">
+      <button id="reload" type="button" disabled>Reload stations</button>
+      <button id="fit" type="button" disabled>Fit stations</button>
+    </div>
+
+    <details open>
+      <summary>Stations and labels</summary>
+      <label class="option"><input id="showLabels" type="checkbox" checked> Show NETWORK.STATION labels</label>
+      <label class="option"><input id="colorByNetwork" type="checkbox" checked> Color markers by network</label>
+      <label class="option"><input id="avoidOverlap" type="checkbox" checked> Avoid label overlap</label>
+      <label class="option"><input id="enableCluster" type="checkbox" checked> Enable marker clustering</label>
+
+      <label for="clusterRadius">Cluster radius: <output id="clusterRadiusOut">50 px</output></label>
+      <input id="clusterRadius" type="range" min="20" max="100" step="10" value="50">
+      <label for="clusterMaxZoom">Maximum clustering zoom: <output id="clusterMaxZoomOut">12</output></label>
+      <input id="clusterMaxZoom" type="range" min="8" max="16" step="1" value="12">
+      <label class="option"><input id="clusterNetworkColors" type="checkbox" checked> Color single-network clusters by network</label>
+
+      <small>Clusters show the number of stations they contain. Click to zoom in. Individual station markers and labels do not require remote map fonts.</small>
+      <div id="legend" aria-label="Network color legend"></div>
+    </details>
+
+    <details>
+      <summary>Basemap and terrain</summary>
+      <label for="basemap">Basemap</label>
+      <select id="basemap">
+        <option value="osm">OpenStreetMap</option>
+        <option value="satellite">Esri satellite imagery</option>
+      </select>
+      <label><input id="terrain" type="checkbox" checked> 3D terrain</label>
+      <label for="exaggeration">Terrain exaggeration: <output id="factor">1.5×</output></label>
+      <input id="exaggeration" type="range" min="1" max="3" step="0.1" value="1.5">
+      <label for="pitch">Map pitch: <output id="angle">55°</output></label>
+      <input id="pitch" type="range" min="0" max="80" value="55">
+      <small>Zoom in to explore the terrain. Right-click and drag to rotate the map.</small>
+    </details>
+
+    <div id="status" role="status" aria-live="polite">Initializing map…</div>
+    <small>StationXML2Map · clustering r3 · refactored</small>
+    <div id="mapStatus" role="status" class="error"></div>
+
+    <details>
+      <summary>Data source and import</summary>
+      <p class="sub">One position per NETWORK.STATION code, using the latest available station epoch. Historical stations may be included; their presence does not imply real-time data transmission. The Viprinet selection originates from the original project file and is not an official INGV classification.</p>
+      <p><a id="query" target="_blank" rel="noopener">Open StationXML request</a></p>
+      <label for="file">Import StationXML or FDSN station text</label>
+      <input id="file" type="file" accept=".xml,.txt,.text">
+    </details>
+  </section>
+
+  <script>
+    'use strict';
+
+    /* ===============================================================
+       StationXML2Map - single-file edition
+
+       Architecture:
+         1. Configuration and application state
+         2. StationXML / FDSN data parsing
+         3. DOM markers, popups and legends
+         4. Screen-space clustering and label collision handling
+         5. Map rendering and data loading
+         6. Map setup and user-interface events
+
+       Everything runs in this HTML page. No build step, module loader,
+       backend, glyph service or extra clustering library is required.
+       =============================================================== */
+
+    // ----------------------------------------------------------------
+    // 1. Configuration and application state
+    // ----------------------------------------------------------------
+
+    const CONFIG = Object.freeze({
+      stationService: 'https://webservices.ingv.it/fdsnws/station/1/query',
+      viprinetCodes: 'CUC,VLC,LNSS,MSAG,MRVN,LPEL,GIUL,VIVA,CAMP,ARVD,CESI,PARC,TRIV,MIDA,GALF,RAFF,LATE,TEOL,LPDG,MTTG,ALJA,SOI,PTMD,MILZ,FAVR,CRJA,LINA,GIB,PETRA,MCT,APRC,MELA,MOCO,SGG,MGR,CAR1,GATE,PIPA,MRLC,USI,CAFE,MRB1,MTMR,PAOL,PSB1,PTRJ,VITU,VULT,STAL,SGO,MTGR,MPG,MNO,GMB,ATN,MEU,LATB',
+      requestTimeoutMs: 45000,
+      offscreenBufferPx: 130,
+      collisionCellSizePx: 72,
+      labelCollisionMarginPx: 3,
+      defaultStationColor: '#e85f35',
+      mixedClusterColor: '#526b7b',
+      networkColors: { IV: '#e76539', MN: '#2786d2', XO: '#8f65c5' },
+      networkPalette: [
+        '#168b78', '#b95280', '#b38a20', '#3977a9',
+        '#8560b2', '#b45d42', '#547b34', '#ca4f54',
+        '#008f9d', '#8b6c42', '#6979ba', '#a75296'
+      ]
+    });
+
+    // Keep DOM references in one place instead of repeatedly searching.
+    const ui = {};
+    for (const id of [
+      'map', 'selection', 'search', 'reload', 'fit',
+      'showLabels', 'colorByNetwork', 'avoidOverlap',
+      'enableCluster', 'clusterRadius', 'clusterRadiusOut',
+      'clusterMaxZoom', 'clusterMaxZoomOut', 'clusterNetworkColors',
+      'legend', 'basemap', 'terrain', 'exaggeration',
+      'factor', 'pitch', 'angle', 'status', 'mapStatus', 'query', 'file'
+    ]) {
+      ui[id] = document.getElementById(id);
+    }
+
+    const state = {
+      map: null,
+      stations: [],
+      markers: [],
+      controller: null,
+      requestSequence: 0,
+      ready: false,
+      renderScheduled: false,
+      labelLayoutScheduled: false
+    };
+
+    function setStatus(message, isError = false) {
+      ui.status.textContent = message;
+      ui.status.classList.toggle('error', isError);
+    }
+
+    function getNetworkColor(networkCode) {
+      if (Object.prototype.hasOwnProperty.call(CONFIG.networkColors, networkCode)) {
+        return CONFIG.networkColors[networkCode];
+      }
+
+      // FNV-1a hashing gives an unknown network a consistent palette color.
+      let hash = 2166136261;
+      for (const character of String(networkCode)) {
+        hash ^= character.charCodeAt(0);
+        hash = Math.imul(hash, 16777619);
+      }
+      return CONFIG.networkPalette[(hash >>> 0) % CONFIG.networkPalette.length];
+    }
+
+    function getMarkerColor(networkCode) {
+      return ui.colorByNetwork.checked
+        ? getNetworkColor(networkCode)
+        : CONFIG.defaultStationColor;
+    }
+
+    function getStationQueryUrl() {
+      const url = new URL(CONFIG.stationService);
+      const parameters = new URLSearchParams({
+        level: 'station',
+        format: 'xml',
+        includerestricted: 'true',
+        nodata: '204'
+      });
+
+      if (ui.selection.value === 'IV') {
+        parameters.set('network', 'IV');
+      } else {
+        parameters.set('station', CONFIG.viprinetCodes);
+      }
+
+      url.search = parameters.toString();
+      return url.href;
+    }
+
+    // ----------------------------------------------------------------
+    // 2. Parse StationXML or FDSN station-level text
+    // ----------------------------------------------------------------
+
+    // Use direct children: channel-level coordinates must not replace
+    // station-level latitude and longitude.
+    function findDirectChild(element, localName) {
+      return Array.from(element.children).find(child => child.localName === localName);
+    }
+
+    function getDirectChildText(element, localName) {
+      return findDirectChild(element, localName)?.textContent.trim() || '';
+    }
+
+    function parseStationXml(text) {
+      const documentXml = new DOMParser().parseFromString(text, 'application/xml');
+      const root = documentXml.documentElement;
+
+      if (documentXml.getElementsByTagName('parsererror').length ||
+          root.localName !== 'FDSNStationXML') {
+        throw new Error('The response is not a valid StationXML document.');
+      }
+
+      const stations = [];
+      for (const network of Array.from(root.children).filter(node => node.localName === 'Network')) {
+        const networkCode = network.getAttribute('code');
+
+        for (const station of Array.from(network.children).filter(node => node.localName === 'Station')) {
+          const site = findDirectChild(station, 'Site');
+          stations.push({
+            network: networkCode,
+            code: station.getAttribute('code'),
+            lat: getDirectChildText(station, 'Latitude'),
+            lon: getDirectChildText(station, 'Longitude'),
+            elevation: getDirectChildText(station, 'Elevation'),
+            site: site ? getDirectChildText(site, 'Name') : '',
+            start: station.getAttribute('startDate') || '',
+            end: station.getAttribute('endDate') || ''
+          });
+        }
+      }
+      return stations;
+    }
+
+    function parseFdsnText(text) {
+      const stations = [];
+      for (const line of text.split(/\r?\n/)) {
+        if (!line.trim() || line.trim().startsWith('#')) continue;
+
+        const fields = line.split('|').map(value => value.trim());
+        if (fields.length < 8) {
+          throw new Error('Invalid FDSN text: station-level fields are required.');
+        }
+
+        const [network, code, lat, lon, elevation, site, start, end] = fields;
+        stations.push({ network, code, lat, lon, elevation, site, start, end });
+      }
+      return stations;
+    }
+
+    function parseStations(text) {
+      const parsed = text.trim().startsWith('<')
+        ? parseStationXml(text)
+        : parseFdsnText(text);
+      const latestByStation = new Map();
+
+      for (const station of parsed) {
+        if (!station.network || !station.code || station.lat === '' || station.lon === '') {
+          continue;
+        }
+
+        station.lat = Number(station.lat);
+        station.lon = Number(station.lon);
+        if (!Number.isFinite(station.lat) || !Number.isFinite(station.lon) ||
+            Math.abs(station.lat) > 90 || Math.abs(station.lon) > 180) {
+          continue;
+        }
+
+        station.name = `${station.network}.${station.code}`;
+        const previous = latestByStation.get(station.name);
+        const currentStart = Date.parse(station.start) || 0;
+        const previousStart = Date.parse(previous?.start) || 0;
+
+        // Multiple station epochs may share the same code. Use the latest.
+        if (!previous || currentStart > previousStart) {
+          latestByStation.set(station.name, station);
+        }
+      }
+
+      if (parsed.length && latestByStation.size === 0) {
+        throw new Error('No valid station coordinates were found.');
+      }
+      return [...latestByStation.values()].sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    function getFilteredStations() {
+      const search = ui.search.value.trim().toLowerCase();
+      return state.stations.filter(station =>
+        `${station.name} ${station.site}`.toLowerCase().includes(search)
+      );
+    }
+
+    // ----------------------------------------------------------------
+    // 3. Popup content and DOM markers
+    // ----------------------------------------------------------------
+
+    function createStationPopupContent(station) {
+      const content = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = station.name;
+      content.append(title);
+
+      const details = [
+        station.site,
+        `${station.lat.toFixed(5)}, ${station.lon.toFixed(5)}`,
+        `StationXML elevation: ${station.elevation || 'N/A'} m`,
+        `Epoch start: ${station.start || 'N/A'}`,
+        `Epoch end: ${station.end || 'not specified'}`
+      ];
+
+      for (const detail of details) {
+        const line = document.createElement('div');
+        line.textContent = detail; // Never inject values from XML as HTML.
+        content.append(line);
+      }
+
+      const terrainButton = document.createElement('button');
+      terrainButton.type = 'button';
+      terrainButton.textContent = 'Explore terrain';
+      terrainButton.addEventListener('click', () => {
+        state.map.flyTo({ center: [station.lon, station.lat], zoom: 12, pitch: 65 });
+      });
+      content.append(terrainButton);
+      return content;
+    }
+
+    function addStationMarker(station) {
+      const root = document.createElement('div');
+      root.className = 'station-marker';
+      root.style.setProperty('--station-color', getMarkerColor(station.network));
+
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'station-dot';
+      dot.title = station.name;
+      dot.setAttribute('aria-label', `Station ${station.name}`);
+
+      const label = document.createElement('span');
+      label.className = 'station-label';
+      label.textContent = station.name;
+      root.append(dot, label);
+
+      // MapLibre owns the transform that anchors this marker to lon/lat.
+      const marker = new maplibregl.Marker({ element: root, anchor: 'center' })
+        .setLngLat([station.lon, station.lat])
+        .setPopup(new maplibregl.Popup({ offset: 12 }).setDOMContent(createStationPopupContent(station)))
+        .addTo(state.map);
+
+      state.markers.push({ marker, root, label });
+    }
+
+    function getGroupCenter(group) {
+      // This regional dataset does not cross the international date line.
+      const sums = group.reduce((accumulator, point) => {
+        accumulator.lon += point.station.lon;
+        accumulator.lat += point.station.lat;
+        return accumulator;
+      }, { lon: 0, lat: 0 });
+      return [sums.lon / group.length, sums.lat / group.length];
+    }
+
+    function showGroupStationList(stations, coordinates) {
+      const content = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = `${stations.length} stations in this group`;
+      content.append(title);
+
+      const list = document.createElement('div');
+      list.className = 'cluster-popup-list';
+
+      for (const station of [...stations].sort((a, b) => a.name.localeCompare(b.name))) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = station.name;
+        button.addEventListener('click', () => {
+          new maplibregl.Popup({ offset: 15, maxWidth: '330px' })
+            .setLngLat([station.lon, station.lat])
+            .setDOMContent(createStationPopupContent(station))
+            .addTo(state.map);
+        });
+        list.append(button);
+      }
+
+      content.append(list);
+      new maplibregl.Popup({ offset: 18, maxWidth: '300px' })
+        .setLngLat(coordinates)
+        .setDOMContent(content)
+        .addTo(state.map);
+    }
+
+    function addClusterMarker(group) {
+      const stations = group.map(point => point.station);
+      const coordinates = getGroupCenter(group);
+      const networks = new Set(stations.map(station => station.network));
+      const isSingleNetwork = networks.size === 1;
+
+      const clusterColor = ui.colorByNetwork.checked &&
+        ui.clusterNetworkColors.checked && isSingleNetwork
+        ? getNetworkColor(stations[0].network)
+        : CONFIG.mixedClusterColor;
+
+      const root = document.createElement('div');
+      root.className = 'cluster-marker';
+      root.dataset.size = stations.length >= 50
+        ? 'xlarge'
+        : stations.length >= 10 ? 'large' : 'normal';
+      root.style.setProperty('--cluster-color', clusterColor);
+
+      const bubble = document.createElement('button');
+      bubble.type = 'button';
+      bubble.className = 'cluster-bubble';
+      bubble.textContent = String(stations.length);
+      bubble.title = `${stations.length} stations; click to expand`;
+      bubble.setAttribute('aria-label', bubble.title);
+      root.append(bubble);
+
+      bubble.addEventListener('click', event => {
+        event.stopPropagation();
+        const maxClusterZoom = Number(ui.clusterMaxZoom.value);
+        const currentZoom = state.map.getZoom();
+        const reference = stations[0];
+        const sameCoordinates = stations.every(station =>
+          Math.abs(station.lon - reference.lon) < 1e-8 &&
+          Math.abs(station.lat - reference.lat) < 1e-8
+        );
+
+        // Identical coordinates cannot be separated by zooming in.
+        if (sameCoordinates || currentZoom > maxClusterZoom) {
+          showGroupStationList(stations, coordinates);
+          return;
+        }
+
+        state.map.easeTo({
+          center: coordinates,
+          zoom: Math.min(18, currentZoom + 2),
+          duration: 650
+        });
+      });
+
+      const marker = new maplibregl.Marker({ element: root, anchor: 'center' })
+        .setLngLat(coordinates)
+        .addTo(state.map);
+      state.markers.push({ marker, root, label: null });
+    }
+
+    function updateNetworkLegend(stations) {
+      const counts = new Map();
+      for (const station of stations) {
+        counts.set(station.network, (counts.get(station.network) || 0) + 1);
+      }
+
+      ui.legend.replaceChildren();
+      if (!counts.size) {
+        const empty = document.createElement('span');
+        empty.className = 'legend-empty';
+        empty.textContent = 'No networks to display';
+        ui.legend.append(empty);
+        return;
+      }
+
+      for (const [network, count] of [...counts].sort((a, b) => a[0].localeCompare(b[0]))) {
+        const item = document.createElement('span');
+        item.className = 'legend-item';
+
+        const dot = document.createElement('span');
+        dot.className = 'legend-dot';
+        dot.style.backgroundColor = getMarkerColor(network);
+
+        const text = document.createElement('span');
+        text.textContent = `${network} (${count})`;
+        item.append(dot, text);
+        ui.legend.append(item);
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // 4. Screen-space clustering and collision-free labels
+    // ----------------------------------------------------------------
+
+    function groupStations(stations) {
+      if (stations.length === 0) return [];
+
+      const clusteringEnabled = ui.enableCluster.checked &&
+        state.map.getZoom() <= Number(ui.clusterMaxZoom.value);
+      const radius = Number(ui.clusterRadius.value);
+
+      // Screen positions are used only to decide grouping. Marker positions
+      // always remain geographic [longitude, latitude] coordinates.
+      const points = stations.map(station => ({
+        station,
+        screen: state.map.project([station.lon, station.lat])
+      }));
+      const parents = points.map((_, index) => index);
+      const ranks = points.map(() => 0);
+      const buckets = new Map();
+
+      function findRoot(index) {
+        while (parents[index] !== index) {
+          parents[index] = parents[parents[index]];
+          index = parents[index];
+        }
+        return index;
+      }
+
+      function join(a, b) {
+        a = findRoot(a);
+        b = findRoot(b);
+        if (a === b) return;
+        if (ranks[a] < ranks[b]) [a, b] = [b, a];
+        parents[b] = a;
+        if (ranks[a] === ranks[b]) ranks[a]++;
+      }
+
+      points.forEach(({ station, screen }, index) => {
+        if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) return;
+
+        if (clusteringEnabled) {
+          const cellX = Math.floor(screen.x / radius);
+          const cellY = Math.floor(screen.y / radius);
+
+          // Only adjacent cells need to be checked for nearby stations.
+          for (let x = cellX - 1; x <= cellX + 1; x++) {
+            for (let y = cellY - 1; y <= cellY + 1; y++) {
+              for (const previousIndex of buckets.get(`${x},${y}`) || []) {
+                const other = points[previousIndex].screen;
+                const dx = other.x - screen.x;
+                const dy = other.y - screen.y;
+                if (dx * dx + dy * dy <= radius * radius) join(index, previousIndex);
+              }
+            }
+          }
+
+          const key = `${cellX},${cellY}`;
+          if (!buckets.has(key)) buckets.set(key, []);
+          buckets.get(key).push(index);
+        } else {
+          // Above max clustering zoom, only truly coincident points remain
+          // grouped, so both stations stay accessible via the group popup.
+          const key = `${station.lon.toFixed(8)},${station.lat.toFixed(8)}`;
+          for (const previousIndex of buckets.get(key) || []) join(index, previousIndex);
+          if (!buckets.has(key)) buckets.set(key, []);
+          buckets.get(key).push(index);
+        }
+      });
+
+      const groups = new Map();
+      points.forEach((point, index) => {
+        const root = findRoot(index);
+        if (!groups.has(root)) groups.set(root, []);
+        groups.get(root).push(point);
+      });
+      return [...groups.values()];
+    }
+
+    function requestLabelLayout() {
+      if (state.labelLayoutScheduled) return;
+      state.labelLayoutScheduled = true;
+      requestAnimationFrame(() => {
+        state.labelLayoutScheduled = false;
+        updateLabelVisibility();
+      });
+    }
+
+    function updateLabelVisibility() {
+      const showLabels = ui.showLabels.checked;
+      const avoidOverlap = ui.avoidOverlap.checked;
+      const labeledMarkers = state.markers.filter(item => item.label);
+
+      // Restore label visibility before reading bounding boxes. Otherwise
+      // labels hidden in the last pass have a zero-size bounding rectangle.
+      for (const item of labeledMarkers) {
+        item.label.classList.toggle('labels-disabled', !showLabels);
+        item.label.classList.toggle('is-hidden', !showLabels);
+      }
+      if (!showLabels || !avoidOverlap || !state.map) return;
+
+      // DOM rectangles reflect the actual location, even on pitched 3D maps.
+      const mapBox = state.map.getContainer().getBoundingClientRect();
+      const labelBoxes = labeledMarkers.map(item => ({
+        label: item.label,
+        rectangle: item.label.getBoundingClientRect()
+      }));
+      const cellSize = CONFIG.collisionCellSizePx;
+      const margin = CONFIG.labelCollisionMarginPx;
+      const occupied = new Map();
+
+      for (const { label, rectangle } of labelBoxes) {
+        const left = rectangle.left - mapBox.left;
+        const right = rectangle.right - mapBox.left;
+        const top = rectangle.top - mapBox.top;
+        const bottom = rectangle.bottom - mapBox.top;
+
+        if (right < 0 || left > mapBox.width || bottom < 0 || top > mapBox.height) {
+          label.classList.add('is-hidden');
+          continue;
+        }
+
+        const xMin = Math.floor((left - margin) / cellSize);
+        const xMax = Math.floor((right + margin) / cellSize);
+        const yMin = Math.floor((top - margin) / cellSize);
+        const yMax = Math.floor((bottom + margin) / cellSize);
+        let collides = false;
+
+        for (let x = xMin; x <= xMax && !collides; x++) {
+          for (let y = yMin; y <= yMax && !collides; y++) {
+            for (const other of occupied.get(`${x},${y}`) || []) {
+              if (left < other.right && right > other.left &&
+                  top < other.bottom && bottom > other.top) {
+                collides = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (collides) {
+          label.classList.add('is-hidden');
+          continue;
+        }
+
+        const paddedBox = {
+          left: left - margin,
+          right: right + margin,
+          top: top - margin,
+          bottom: bottom + margin
+        };
+        for (let x = xMin; x <= xMax; x++) {
+          for (let y = yMin; y <= yMax; y++) {
+            const key = `${x},${y}`;
+            if (!occupied.has(key)) occupied.set(key, []);
+            occupied.get(key).push(paddedBox);
+          }
+        }
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // 5. Render stations, fetch data and import local files
+    // ----------------------------------------------------------------
+
+    function requestRender() {
+      if (!state.ready || state.renderScheduled) return;
+      state.renderScheduled = true;
+      requestAnimationFrame(() => {
+        state.renderScheduled = false;
+        renderStations();
+      });
+    }
+
+    function renderStations() {
+      if (!state.ready || !state.map) return;
+
+      // Re-create visible HTML markers after a cluster/zoom/filter change.
+      for (const item of state.markers) item.marker.remove();
+      state.markers = [];
+
+      const filtered = getFilteredStations();
+      const groups = groupStations(filtered);
+      const container = state.map.getContainer();
+      const { clientWidth: width, clientHeight: height } = container;
+      const buffer = CONFIG.offscreenBufferPx;
+      let visibleClusters = 0;
+      let visibleSingles = 0;
+
+      for (const group of groups) {
+        const coordinates = group.length === 1
+          ? [group[0].station.lon, group[0].station.lat]
+          : getGroupCenter(group);
+        const pixel = state.map.project(coordinates);
+
+        // Do not create offscreen DOM markers; render again after moveend.
+        if (!Number.isFinite(pixel.x) || !Number.isFinite(pixel.y) ||
+            pixel.x < -buffer || pixel.x > width + buffer ||
+            pixel.y < -buffer || pixel.y > height + buffer) {
+          continue;
+        }
+
+        if (group.length === 1) {
+          addStationMarker(group[0].station);
+          visibleSingles++;
+        } else {
+          addClusterMarker(group);
+          visibleClusters++;
+        }
+      }
+
+      ui.fit.disabled = filtered.length === 0;
+      updateNetworkLegend(filtered);
+      const clusterWord = visibleClusters === 1 ? 'cluster' : 'clusters';
+      const markerWord = visibleSingles === 1 ? 'marker' : 'markers';
+      setStatus(`${filtered.length} selected / ${state.stations.length} loaded stations · ` +
+        `${visibleClusters} ${clusterWord} and ${visibleSingles} individual ${markerWord} in view.`);
+      requestLabelLayout();
+    }
+
+    function fitStations() {
+      const stations = getFilteredStations();
+      if (!stations.length) return;
+
+      const bounds = new maplibregl.LngLatBounds();
+      for (const station of stations) bounds.extend([station.lon, station.lat]);
+
+      const isNarrow = window.innerWidth < 700;
+      const padding = isNarrow
+        ? { top: window.innerHeight * 0.46, bottom: 45, left: 35, right: 45 }
+        : { top: 70, bottom: 70, left: 350, right: 70 };
+      state.map.fitBounds(bounds, {
+        padding,
+        maxZoom: 11,
+        pitch: Number(ui.pitch.value),
+        duration: 900
+      });
+    }
+
+    async function loadStations() {
+      const sequence = ++state.requestSequence;
+      state.controller?.abort();
+      const controller = new AbortController();
+      state.controller = controller;
+      const timeout = setTimeout(() => controller.abort(), CONFIG.requestTimeoutMs);
+      const url = getStationQueryUrl();
+      ui.query.href = url;
+      ui.reload.disabled = true;
+      setStatus('Loading StationXML from INGV…');
+
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`INGV returned HTTP ${response.status}.`);
+        const stations = response.status === 204
+          ? []
+          : parseStations(await response.text());
+
+        // A newer request or a local import supersedes this response.
+        if (sequence !== state.requestSequence) return;
+        state.stations = stations;
+        renderStations();
+        if (stations.length) {
+          fitStations();
+        } else {
+          setStatus('No stations were returned for this selection.');
+        }
+      } catch (error) {
+        if (sequence !== state.requestSequence) return;
+        const reason = error.name === 'AbortError'
+          ? 'The INGV request timed out.'
+          : error.message;
+        const oldDataNote = state.stations.length
+          ? ' Previously loaded stations remain visible.'
+          : '';
+        setStatus(`${reason} Please retry or import StationXML below.${oldDataNote}`, true);
+      } finally {
+        clearTimeout(timeout);
+        if (sequence === state.requestSequence) ui.reload.disabled = false;
+      }
+    }
+
+    async function importStations() {
+      const file = ui.file.files[0];
+      if (!file || !state.ready) return;
+
+      ++state.requestSequence;
+      state.controller?.abort();
+      ui.reload.disabled = false;
+      try {
+        // Parse before committing so a malformed import keeps the old data.
+        const imported = parseStations(await file.text());
+        state.stations = imported;
+        renderStations();
+        if (imported.length) fitStations();
+      } catch (error) {
+        setStatus(error.message, true);
+      } finally {
+        ui.file.value = '';
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // 6. Map configuration and UI events
+    // ----------------------------------------------------------------
+
+    function createMapStyle() {
+      const elevationSource = {
+        type: 'raster-dem',
+        tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        encoding: 'terrarium',
+        maxzoom: 15,
+        attribution: 'Elevation © Mapzen / AWS Open Data'
+      };
+
+      return {
+        version: 8,
+        sources: {
+          osm: {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            maxzoom: 19,
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          },
+          satellite: {
+            type: 'raster',
+            tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+            tileSize: 256,
+            maxzoom: 18,
+            attribution: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+          },
+          dem: elevationSource,
+          hilldem: { ...elevationSource }
+        },
+        layers: [
+          { id: 'osm', type: 'raster', source: 'osm' },
+          { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: 'none' } },
+          {
+            id: 'hillshade',
+            type: 'hillshade',
+            source: 'hilldem',
+            paint: { 'hillshade-exaggeration': 0.25 }
+          }
+        ],
+        terrain: { source: 'dem', exaggeration: 1.5 }
+      };
+    }
+
+    function applyTerrainSettings() {
+      state.map.setTerrain(ui.terrain.checked
+        ? { source: 'dem', exaggeration: Number(ui.exaggeration.value) }
+        : null);
+      ui.factor.textContent = `${ui.exaggeration.value}×`;
+    }
+
+    function changeBasemap() {
+      if (!state.ready) return;
+      const showOsm = ui.basemap.value === 'osm';
+      state.map.setLayoutProperty('osm', 'visibility', showOsm ? 'visible' : 'none');
+      state.map.setLayoutProperty('satellite', 'visibility', showOsm ? 'none' : 'visible');
+      ui.mapStatus.textContent = '';
+    }
+
+    function bindControls() {
+      ui.reload.addEventListener('click', loadStations);
+      ui.selection.addEventListener('change', loadStations);
+      ui.fit.addEventListener('click', fitStations);
+      ui.search.addEventListener('input', requestRender);
+      ui.showLabels.addEventListener('change', requestLabelLayout);
+      ui.avoidOverlap.addEventListener('change', requestLabelLayout);
+
+      for (const id of ['colorByNetwork', 'clusterNetworkColors', 'enableCluster']) {
+        ui[id].addEventListener('change', requestRender);
+      }
+
+      for (const id of ['clusterRadius', 'clusterMaxZoom']) {
+        ui[id].addEventListener('input', () => {
+          ui[`${id}Out`].textContent = ui[id].value + (id === 'clusterRadius' ? ' px' : '');
+        });
+        ui[id].addEventListener('change', requestRender);
+      }
+
+      ui.basemap.addEventListener('change', changeBasemap);
+      ui.terrain.addEventListener('change', () => {
+        if (state.ready) { applyTerrainSettings(); requestRender(); }
+      });
+      ui.exaggeration.addEventListener('input', () => {
+        if (state.ready) { applyTerrainSettings(); requestRender(); }
+      });
+      ui.pitch.addEventListener('input', () => {
+        if (state.ready) state.map.setPitch(Number(ui.pitch.value));
+      });
+      ui.file.addEventListener('change', importStations);
+    }
+
+    function initializeMap() {
+      if (!window.maplibregl) {
+        throw new Error('MapLibre could not be loaded. Check your connection to unpkg.com.');
+      }
+
+      state.map = new maplibregl.Map({
+        container: 'map',
+        center: [12.5, 42.5],
+        zoom: 5.4,
+        pitch: 55,
+        maxPitch: 80,
+        maxZoom: 18,
+        style: createMapStyle()
+      });
+
+      state.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+      state.map.addControl(new maplibregl.FullscreenControl(), 'top-right');
+      state.map.addControl(new maplibregl.ScaleControl(), 'bottom-right');
+
+      state.map.on('error', event => {
+        console.error(event.error);
+        ui.mapStatus.textContent = 'A map resource is unavailable. Try another basemap or disable 3D terrain. See the browser console for details.';
+      });
+      state.map.on('pitch', () => {
+        const pitch = Math.round(state.map.getPitch());
+        ui.pitch.value = pitch;
+        ui.angle.textContent = `${pitch}°`;
+      });
+
+      // MapLibre moves HTML markers during interaction; recompute which
+      // station labels overlap after that movement, not their coordinates.
+      state.map.on('move', requestLabelLayout);
+      state.map.on('moveend', requestRender);
+      state.map.on('resize', requestRender);
+      state.map.once('style.load', requestRender);
+    }
+
+    function initializeApplication() {
+      initializeMap();
+      bindControls();
+      state.ready = true;
+      ui.reload.disabled = false;
+
+      // Station data can load without waiting for slow raster/terrain tiles.
+      loadStations();
+    }
+
+    try {
+      initializeApplication();
+    } catch (error) {
+      setStatus(`Unable to initialize the map: ${error.message}`, true);
+    }
+  </script>
 </body>
 </html>
