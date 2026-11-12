@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Stazioni INGV · Viprinet 3D</title>
+<title>Stazioni INGV · Clustering 3D</title>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css">
 <script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <style>
@@ -51,7 +51,11 @@ a{color:#155d78}details{margin-top:12px}summary{cursor:pointer;font-weight:600}#
 <label class="option"><input id="showLabels" type="checkbox" checked> Mostra etichette RETE.STAZIONE</label>
 <label class="option"><input id="colorByNetwork" type="checkbox" checked> Colori distinti per rete</label>
 <label class="option"><input id="avoidOverlap" type="checkbox" checked> Evita sovrapposizione delle etichette</label>
-<small>I marker restano visibili. Con la prevenzione delle sovrapposizioni, alcune etichette vengono temporaneamente nascoste quando la mappa è affollata.</small>
+<label class="option"><input id="enableCluster" type="checkbox" checked> Raggruppa marker vicini (clustering)</label>
+<label for="clusterRadius">Raggio di clustering: <output id="clusterRadiusOut">50 px</output></label><input type="range" id="clusterRadius" min="20" max="100" step="10" value="50">
+<label for="clusterMaxZoom">Zoom massimo clustering: <output id="clusterMaxZoomOut">12</output></label><input type="range" id="clusterMaxZoom" min="8" max="16" step="1" value="12">
+<label class="option"><input id="clusterNetworkColors" type="checkbox" checked> Colori dei cluster omogenei per rete</label>
+<small>I cluster mostrano il numero di stazioni. Clic su un cluster per espanderlo. Marker sempre visibili e label RETE.STAZIONE sulle stazioni individuali (salvo collisioni).</small>
 <div id="legend" aria-label="Legenda delle reti"></div>
 </details>
 <details><summary>Vista e rilievo</summary>
@@ -71,7 +75,8 @@ a{color:#155d78}details{margin-top:12px}summary{cursor:pointer;font-weight:600}#
 'use strict';
 const VIPRINET='CUC,VLC,LNSS,MSAG,MRVN,LPEL,GIUL,VIVA,CAMP,ARVD,CESI,PARC,TRIV,MIDA,GALF,RAFF,LATE,TEOL,LPDG,MTTG,ALJA,SOI,PTMD,MILZ,FAVR,CRJA,LINA,GIB,PETRA,MCT,APRC,MELA,MOCO,SGG,MGR,CAR1,GATE,PIPA,MRLC,USI,CAFE,MRB1,MTMR,PAOL,PSB1,PTRJ,VITU,VULT,STAL,SGO,MTGR,MPG,MNO,GMB,ATN,MEU,LATB';
 const $=id=>document.getElementById(id);
-let map,stations=[],markers=[],controller,generation=0,loaded=false,layoutPending=false;
+let map,stations=[],controller,generation=0,loaded=false,renderedStations=[],clusterRequest=0;
+const STATIONS_SOURCE='stations-data';
 const NETWORK_COLORS={IV:'#e76539',MN:'#2786d2',XO:'#8f65c5'};
 const PALETTE=['#168b78','#b95280','#b38a20','#3977a9','#8560b2','#b45d42','#547b34','#ca4f54','#008f9d','#8b6c42','#6979ba','#a75296'];
 function networkColor(code){
@@ -129,47 +134,121 @@ function updateLegend(visible){
   entry.append(dot,text);legend.append(entry);
  }
 }
-function scheduleLabelLayout(){if(layoutPending)return;layoutPending=true;requestAnimationFrame(()=>{layoutPending=false;layoutLabels()})}
-function layoutLabels(){
- const show=$('showLabels').checked,avoid=$('avoidOverlap').checked;
- // Make all labels measurable first, including those hidden by the last collision pass.
- for(const item of markers){item.label.classList.toggle('labels-disabled',!show);item.label.classList.toggle('is-hidden',!show)}
- if(!show||!avoid||!map)return;
- // Work in screen coordinates, reading actual DOM rectangles instead of inferring
- // offsets from map.project(). This also works for tilted / 3-D maps.
- const viewport=map.getContainer().getBoundingClientRect();
- const boxes=markers.map(item=>({label:item.label,rect:item.label.getBoundingClientRect()}));
- const cellSize=72,grid=new Map(),margin=3;
- for(const {label,rect} of boxes){
-  const left=rect.left-viewport.left,top=rect.top-viewport.top,right=rect.right-viewport.left,bottom=rect.bottom-viewport.top;
-  if(right<0||left>viewport.width||bottom<0||top>viewport.height){label.classList.add('is-hidden');continue}
-  const x0=Math.floor((left-margin)/cellSize),x1=Math.floor((right+margin)/cellSize),y0=Math.floor((top-margin)/cellSize),y1=Math.floor((bottom+margin)/cellSize);
-  let overlaps=false;
-  for(let x=x0;x<=x1&&!overlaps;x++)for(let y=y0;y<=y1&&!overlaps;y++){
-   for(const box of grid.get(x+','+y)||[]){if(left<box.right&&right>box.left&&top<box.bottom&&bottom>box.top){overlaps=true;break}}
-  }
-  if(overlaps){label.classList.add('is-hidden');continue}
-  const box={left:left-margin,right:right+margin,top:top-margin,bottom:bottom+margin};
-  for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++){
-   const key=x+','+y;if(!grid.has(key))grid.set(key,[]);grid.get(key).push(box);
-  }
+function stationGeoJSON(visible){
+ return {type:'FeatureCollection',features:visible.map((s,index)=>({
+  type:'Feature',id:index,geometry:{type:'Point',coordinates:[s.lon,s.lat]},
+  properties:{name:s.name,network:s.network,site:s.site||'',index}
+ }))};
+}
+function activeNetworks(visible){return [...new Set(visible.map(s=>s.network))].sort()}
+function networkExpression(networks){
+ const list=['match',['get','network']];
+ for(const code of networks)list.push(code,networkColor(code));
+ return [...list,'#e85f35'];
+}
+function clusterProperties(networks){
+ const properties={};
+ for(let i=0;i<networks.length;i++){
+  const code=networks[i];
+  properties['net'+i]=['+',['case',['==',['get','network'],code],1,0]];
+ }
+ return properties;
+}
+function clusterPaint(networks){
+ if(!$('colorByNetwork').checked||!$('clusterNetworkColors').checked)return '#526b7b';
+ let expression='#526b7b';
+ // A cluster is coloured as its network only when every contained station belongs to it.
+ for(let i=networks.length-1;i>=0;i--){
+  expression=['case',['==',['get','net'+i],['get','point_count']],networkColor(networks[i]),expression];
+ }
+ return expression;
+}
+function setLayerVisibility(id,visible){if(map.getLayer(id))map.setLayoutProperty(id,'visibility',visible?'visible':'none')}
+function updateLayerStyles(networks){
+ if(!map.getLayer('station-points'))return;
+ map.setPaintProperty('station-points','circle-color',$('colorByNetwork').checked?networkExpression(networks):'#e85f35');
+ map.setPaintProperty('station-clusters','circle-color',clusterPaint(networks));
+ setLayerVisibility('station-labels',$('showLabels').checked);
+ map.setLayoutProperty('station-labels','text-allow-overlap',!$('avoidOverlap').checked);
+}
+function addStationLayers(){
+ // The background style already exists. Data source and layers are defined once.
+ map.addSource(STATIONS_SOURCE,{type:'geojson',data:{type:'FeatureCollection',features:[]},cluster:true,clusterRadius:50,clusterMaxZoom:12});
+ addDataLayers();
+ map.on('click','station-clusters',async event=>{
+  const features=map.queryRenderedFeatures(event.point,{layers:['station-clusters']});
+  if(!features.length)return;
+  const f=features[0],source=map.getSource(STATIONS_SOURCE),clusterId=f.properties.cluster_id;
+  const request=++clusterRequest;
+  try{
+   const zoom=await source.getClusterExpansionZoom(clusterId);
+   if(request!==clusterRequest)return;
+   if(zoom<=map.getZoom()+0.01){
+    // Cluster may remain at max zoom when stations have identical coordinates.
+    await showClusterLeaves(clusterId,f.geometry.coordinates,event.lngLat);
+   }else map.easeTo({center:f.geometry.coordinates,zoom:zoom+0.15,duration:650});
+  }catch(error){console.warn('Impossibile espandere il cluster',error)}
+ });
+ map.on('click','station-points',event=>{
+  const items=map.queryRenderedFeatures(event.point,{layers:['station-points']});
+  if(!items.length)return;
+  const unique=[...new Set(items.map(f=>Number(f.properties.index)))].map(i=>renderedStations[i]).filter(Boolean);
+  if(unique.length===1)showStationPopup(unique[0]);
+  else if(unique.length>1)showStationList(unique,event.lngLat);
+ });
+ for(const id of ['station-clusters','station-points']){
+  map.on('mouseenter',id,()=>map.getCanvas().style.cursor='pointer');
+  map.on('mouseleave',id,()=>map.getCanvas().style.cursor='');
  }
 }
+function showStationPopup(s){
+ new maplibregl.Popup({offset:12,maxWidth:'320px'}).setLngLat([s.lon,s.lat]).setDOMContent(popup(s)).addTo(map);
+}
+function showStationList(items,lngLat){
+ const el=document.createElement('div');const heading=document.createElement('strong');heading.textContent=items.length+' stazioni nello stesso punto';el.append(heading);
+ const list=document.createElement('div');list.style.cssText='max-height:220px;overflow:auto';
+ for(const s of items){const b=document.createElement('button');b.textContent=s.name;b.onclick=()=>showStationPopup(s);list.append(b)}
+ el.append(list);new maplibregl.Popup({offset:12,maxWidth:'300px'}).setLngLat(lngLat).setDOMContent(el).addTo(map);
+}
+async function showClusterLeaves(id,coordinates,lngLat){
+ const source=map.getSource(STATIONS_SOURCE);
+ const limit=Math.min(renderedStations.length,5000);
+ const leaves=await source.getClusterLeaves(id,limit,0);
+ const unique=[...new Set(leaves.map(f=>Number(f.properties.index)))].map(i=>renderedStations[i]).filter(Boolean);
+ if(unique.length)showStationList(unique,lngLat||new maplibregl.LngLat(...coordinates));
+}
 function render(){
- markers.forEach(item=>item.marker.remove());markers=[];
- const visible=visibleStations();
- for(const s of visible){
-  const root=document.createElement('div');root.className='station-marker';
-  root.style.setProperty('--station-color',$('colorByNetwork').checked?networkColor(s.network):'#e85f35');
-  const dot=document.createElement('button');dot.type='button';dot.className='station-dot';dot.title=s.name;dot.setAttribute('aria-label','Stazione '+s.name);
-  const label=document.createElement('span');label.className='station-label';label.textContent=s.name;
-  root.append(dot,label);
-  const marker=new maplibregl.Marker({element:root,anchor:'center'}).setLngLat([s.lon,s.lat]).setPopup(new maplibregl.Popup({offset:12}).setDOMContent(popup(s))).addTo(map);
-  markers.push({station:s,marker,label,root});
- }
- $('fit').disabled=!markers.length;updateLegend(visible);
- status(`${markers.length} stazioni visualizzate / ${stations.length} caricate.`);
- scheduleLabelLayout();
+ if(!loaded||!map.getLayer('station-points'))return;
+ const visible=visibleStations(),networks=activeNetworks(visible);
+ renderedStations=visible;
+ // Config is re-applied by replacing only this GeoJSON source, without replacing the whole map style.
+ for(const id of ['station-labels','station-points','station-cluster-count','station-clusters'])map.removeLayer(id);
+ map.removeSource(STATIONS_SOURCE);
+ const clustered=$('enableCluster').checked;
+ map.addSource(STATIONS_SOURCE,{type:'geojson',data:stationGeoJSON(visible),cluster:clustered,
+  clusterRadius:Number($('clusterRadius').value),clusterMaxZoom:Number($('clusterMaxZoom').value),
+  ...(clustered?{clusterProperties:clusterProperties(networks)}:{})});
+ addDataLayers();
+ updateLayerStyles(networks);
+ $('fit').disabled=!visible.length;
+ updateLegend(visible);
+ status(`${visible.length} stazioni visualizzate / ${stations.length} caricate. ${clustered?'Clustering attivo.':'Clustering disattivato.'}`);
+}
+function addDataLayers(){
+ // Layers use stable ids so listeners attached in addStationLayers survive source replacement.
+ const source=STATIONS_SOURCE;
+ map.addLayer({id:'station-clusters',type:'circle',source,filter:['has','point_count'],paint:{
+  'circle-color':'#526b7b','circle-radius':['step',['get','point_count'],18,10,23,50,29,100,34],
+  'circle-stroke-color':'#fff','circle-stroke-width':2.5,'circle-opacity':0.96}});
+ map.addLayer({id:'station-cluster-count',type:'symbol',source,filter:['has','point_count'],layout:{
+  'text-field':['to-string',['get','point_count']],'text-font':['Open Sans Regular'],'text-size':13,
+  'text-allow-overlap':true,'text-ignore-placement':true},paint:{'text-color':'#fff','text-halo-color':'#233c4b','text-halo-width':0.5}});
+ map.addLayer({id:'station-points',type:'circle',source,filter:['!', ['has','point_count']],paint:{
+  'circle-radius':7,'circle-color':'#e85f35','circle-stroke-color':'#fff','circle-stroke-width':2.25}});
+ map.addLayer({id:'station-labels',type:'symbol',source,filter:['!', ['has','point_count']],layout:{
+  'text-field':['get','name'],'text-font':['Open Sans Regular'],'text-size':12,'text-anchor':'left','text-offset':[1.25,0],
+  'text-allow-overlap':false,'text-optional':true,'text-padding':3},paint:{
+  'text-color':'#193f54','text-halo-color':'#fff','text-halo-width':2,'text-halo-blur':0.4}});
 }
 function fit(){
  const visible=visibleStations();if(!visible.length)return;
@@ -194,20 +273,24 @@ function terrain(){map.setTerrain($('terrain').checked?{source:'dem',exaggeratio
 async function init(){
  if(!window.maplibregl)throw new Error('MapLibre non caricato: verifica connessione e accesso a unpkg.com.');
  const dem={type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,encoding:'terrarium',maxzoom:15,attribution:'Elevation © Mapzen / AWS Open Data'};
- map=new maplibregl.Map({container:'map',center:[12.5,42.5],zoom:5.4,pitch:55,maxPitch:80,maxZoom:18,style:{version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,maxzoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'},satellite:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:18,attribution:'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'},dem:dem,hilldem:{...dem}},layers:[{id:'osm',type:'raster',source:'osm'},{id:'satellite',type:'raster',source:'satellite',layout:{visibility:'none'}},{id:'hillshade',type:'hillshade',source:'hilldem',paint:{'hillshade-exaggeration':0.25}}],terrain:{source:'dem',exaggeration:1.5}}});
+ map=new maplibregl.Map({container:'map',center:[12.5,42.5],zoom:5.4,pitch:55,maxPitch:80,maxZoom:18,style:{version:8,glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,maxzoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'},satellite:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:18,attribution:'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'},dem:dem,hilldem:{...dem}},layers:[{id:'osm',type:'raster',source:'osm'},{id:'satellite',type:'raster',source:'satellite',layout:{visibility:'none'}},{id:'hillshade',type:'hillshade',source:'hilldem',paint:{'hillshade-exaggeration':0.25}}],terrain:{source:'dem',exaggeration:1.5}}});
  map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');map.addControl(new maplibregl.FullscreenControl(),'top-right');map.addControl(new maplibregl.ScaleControl(),'bottom-right');
  map.on('error',e=>{console.error(e.error);$('mapStatus').textContent='Una risorsa cartografica non è disponibile. Prova a cambiare sfondo o disattivare il terreno 3D. Dettagli nella console del browser.'});
  map.on('pitch',()=>{$('pitch').value=Math.round(map.getPitch());$('angle').textContent=Math.round(map.getPitch())+'°'});
  // Labels are repositioned by MapLibre continuously; collision checks track those updates.
- map.on('move',scheduleLabelLayout);map.on('moveend',scheduleLabelLayout);map.on('resize',scheduleLabelLayout);
+ // Native MapLibre layers follow map movement, zoom, pitch and terrain automatically.
  // Bind on style.load: station fetch does not wait for all remote tiles to finish.
- map.once('style.load',()=>{loaded=true;$('reload').disabled=false;loadStations()});
+ map.once('style.load',()=>{loaded=true;addStationLayers();$('reload').disabled=false;loadStations()});
  $('reload').onclick=loadStations;$('selection').onchange=()=>{if(loaded)loadStations()};$('fit').onclick=fit;$('search').oninput=()=>{if(loaded)render()};
- $('showLabels').onchange=scheduleLabelLayout;
- $('avoidOverlap').onchange=scheduleLabelLayout;
- $('colorByNetwork').onchange=()=>{for(const item of markers)item.root.style.setProperty('--station-color',$('colorByNetwork').checked?networkColor(item.station.network):'#e85f35');updateLegend(visibleStations())};
+ $('showLabels').onchange=()=>updateLayerStyles(activeNetworks(renderedStations));
+ $('avoidOverlap').onchange=()=>updateLayerStyles(activeNetworks(renderedStations));
+ $('colorByNetwork').onchange=()=>{updateLayerStyles(activeNetworks(renderedStations));updateLegend(renderedStations)};
+ $('clusterNetworkColors').onchange=()=>updateLayerStyles(activeNetworks(renderedStations));
+ $('enableCluster').onchange=render;
+ for(const id of ['clusterRadius','clusterMaxZoom'])$(id).oninput=()=>{$(id+'Out').textContent=$(id).value+(id==='clusterRadius'?' px':'')};
+ for(const id of ['clusterRadius','clusterMaxZoom'])$(id).onchange=render;
  $('basemap').onchange=()=>{if(!loaded)return;map.setLayoutProperty('osm','visibility',$('basemap').value==='osm'?'visible':'none');map.setLayoutProperty('satellite','visibility',$('basemap').value==='satellite'?'visible':'none');$('mapStatus').textContent=''};
- $('terrain').onchange=()=>{if(loaded){terrain();scheduleLabelLayout()}};$('exaggeration').oninput=()=>{if(loaded){terrain();scheduleLabelLayout()}};$('pitch').oninput=()=>{if(loaded)map.setPitch(Number($('pitch').value))};
+ $('terrain').onchange=()=>{if(loaded){terrain()}};$('exaggeration').oninput=()=>{if(loaded){terrain()}};$('pitch').oninput=()=>{if(loaded)map.setPitch(Number($('pitch').value))};
  $('file').onchange=async()=>{const file=$('file').files[0];if(!file||!loaded)return;++generation;controller?.abort();$('reload').disabled=false;try{stations=parseStations(await file.text());render();fit()}catch(e){status(e.message,true)}finally{$('file').value=''}};
 }
 init().catch(e=>status('Impossibile avviare la mappa: '+e.message,true));
